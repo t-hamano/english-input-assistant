@@ -1,0 +1,82 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+
+label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  width: 100%;
+  padding: 0px 8px;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  font-size: inherit;
+  font-family: inherit;
+  height: 32px;
+}
+
+textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+textarea {
+  resize: none;
+}
+
+button {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button:hover {
+  opacity: 0.8;
+}
+
+button[aria-pressed] {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+
+button svg {
+  width: 16px;
+  fill: currentColor;
+}
+
+.btn-primary {
+  background: #3858e9;
+  color: #fff;
+  border-color: #3858e9;
+}
