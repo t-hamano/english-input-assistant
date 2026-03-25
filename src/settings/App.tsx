@@ -11,29 +11,17 @@ interface AppConfig {
   tts_speed: number;
 }
 
-const GEMINI_MODELS = [
-  {
-    value: "gemini-2.5-flash-lite",
-    label: "Gemini 2.5 Flash-Lite"
-  },
-  {
-    value: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash"
-  },
-];
+interface GeminiModel {
+  value: string;
+  label: string;
+  is_default: boolean;
+}
 
-const TTS_VOICES = [
-  { value: "en-US-Standard-A", label: "Standard-A (Male)" },
-  { value: "en-US-Standard-B", label: "Standard-B (Male)" },
-  { value: "en-US-Standard-C", label: "Standard-C (Female)" },
-  { value: "en-US-Standard-D", label: "Standard-D (Male)" },
-  { value: "en-US-Standard-E", label: "Standard-E (Female)" },
-  { value: "en-US-Standard-F", label: "Standard-F (Female)" },
-  { value: "en-US-Standard-G", label: "Standard-G (Female)" },
-  { value: "en-US-Standard-H", label: "Standard-H (Female)" },
-  { value: "en-US-Standard-I", label: "Standard-I (Male)" },
-  { value: "en-US-Standard-J", label: "Standard-J (Male)" },
-];
+interface TtsVoice {
+  value: string;
+  label: string;
+  is_default: boolean;
+}
 
 async function resizeToContent() {
   await new Promise((r) => requestAnimationFrame(r));
@@ -42,13 +30,17 @@ async function resizeToContent() {
 }
 
 export function App() {
-  const [googleKey, setGoogleKey] = useState("");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
-  const [additionalPrompt, setAdditionalPrompt] = useState("");
-  const [autoStart, setAutoStart] = useState(false);
-  const [ttsVoice, setTtsVoice] = useState("en-US-Standard-C");
-  const [ttsSpeed, setTtsSpeed] = useState(1.0);
+  const [settings, setSettings] = useState<AppConfig | null>(null);
+  const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
+  const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
   const [playing, setPlaying] = useState(false);
+
+  const update = useCallback(
+    <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
+      setSettings((prev) => prev && ({ ...prev, [key]: value }));
+    },
+    []
+  );
 
   useEffect(() => {
     const unlisten = [
@@ -61,13 +53,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    invoke<AppConfig>("get_config").then((config) => {
-      setGoogleKey(config.google_api_key);
-      setGeminiModel(config.gemini_model);
-      setAdditionalPrompt(config.additional_prompt);
-      setAutoStart(config.auto_start);
-      setTtsVoice(config.tts_voice);
-      setTtsSpeed(config.tts_speed);
+    Promise.all([
+      invoke<GeminiModel[]>("get_gemini_models"),
+      invoke<TtsVoice[]>("get_tts_voices"),
+      invoke<AppConfig>("get_config"),
+    ]).then(([models, voices, config]) => {
+      setGeminiModels(models);
+      setTtsVoices(voices);
+      setSettings(config);
     });
   }, []);
 
@@ -76,21 +69,16 @@ export function App() {
   });
 
   const handleSave = useCallback(async () => {
-    const config: AppConfig = {
-      google_api_key: googleKey,
-      additional_prompt: additionalPrompt,
-      auto_start: autoStart,
-      gemini_model: geminiModel,
-      tts_voice: ttsVoice,
-      tts_speed: ttsSpeed,
-    };
-    await invoke("save_config", { config });
+    if (!settings) return;
+    await invoke("save_config", { config: settings });
     await getCurrentWindow().close();
-  }, [googleKey, geminiModel, additionalPrompt, autoStart, ttsVoice, ttsSpeed]);
+  }, [settings]);
 
   const handleCancel = useCallback(async () => {
     await getCurrentWindow().close();
   }, []);
+
+  if (!settings) return null;
 
   return (
     <div className="content">
@@ -100,18 +88,18 @@ export function App() {
           type="password"
           id="google-key"
           placeholder="AIza..."
-          value={googleKey}
-          onChange={(e) => setGoogleKey(e.target.value)}
+          value={settings.google_api_key}
+          onChange={(e) => update("google_api_key", e.target.value)}
         />
       </div>
       <div className="field">
-        <label htmlFor="gemini-model">Gemini Model (Input / Output per 1M tokens)</label>
+        <label htmlFor="gemini-model">Gemini Model</label>
         <select
           id="gemini-model"
-          value={geminiModel}
-          onChange={(e) => setGeminiModel(e.target.value)}
+          value={settings.gemini_model}
+          onChange={(e) => update("gemini_model", e.target.value)}
         >
-          {GEMINI_MODELS.map((m) => (
+          {geminiModels.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
             </option>
@@ -124,8 +112,8 @@ export function App() {
           id="additional-prompt"
           rows={3}
           placeholder="e.g. Use casual tone"
-          value={additionalPrompt}
-          onChange={(e) => setAdditionalPrompt(e.target.value)}
+          value={settings.additional_prompt}
+          onChange={(e) => update("additional_prompt", e.target.value)}
         />
       </div>
       <div className="field">
@@ -133,10 +121,10 @@ export function App() {
         <div className="voice">
           <select
             id="tts-voice"
-            value={ttsVoice}
-            onChange={(e) => setTtsVoice(e.target.value)}
+            value={settings.tts_voice}
+            onChange={(e) => update("tts_voice", e.target.value)}
           >
-            {TTS_VOICES.map((v) => (
+            {ttsVoices.map((v) => (
               <option key={v.value} value={v.value}>
                 {v.label}
               </option>
@@ -149,7 +137,7 @@ export function App() {
             onClick={() =>
               playing
                 ? invoke("stop_tts")
-                : invoke("preview_tts", { voice: ttsVoice, speed: ttsSpeed })
+                : invoke("preview_tts", { voice: settings.tts_voice, speed: settings.tts_speed })
             }
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
@@ -159,23 +147,23 @@ export function App() {
         </div>
       </div>
       <div className="field">
-        <label htmlFor="tts-speed">Voice Speed ({ttsSpeed.toFixed(1)}x)</label>
+        <label htmlFor="tts-speed">Voice Speed ({settings.tts_speed.toFixed(1)}x)</label>
         <input
           type="range"
           id="tts-speed"
           min="0.5"
           max="2.0"
           step="0.1"
-          value={ttsSpeed}
-          onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+          value={settings.tts_speed}
+          onChange={(e) => update("tts_speed", parseFloat(e.target.value))}
         />
       </div>
       <div className="field checkbox-field">
         <label>
           <input
             type="checkbox"
-            checked={autoStart}
-            onChange={(e) => setAutoStart(e.target.checked)}
+            checked={settings.auto_start}
+            onChange={(e) => update("auto_start", e.target.checked)}
           />
           Launch at startup
         </label>

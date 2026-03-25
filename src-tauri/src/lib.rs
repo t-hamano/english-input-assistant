@@ -2,6 +2,13 @@ mod config;
 mod llm;
 mod tts;
 
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        println!($($arg)*);
+    };
+}
+
 use std::sync::Mutex;
 use std::{thread, time::Duration};
 
@@ -122,7 +129,7 @@ fn translate_with_retry(
         match llm::translate(api_key, model, input, additional_prompt) {
             Ok(result) => return Ok(result),
             Err(e) => {
-                println!(
+                debug_log!(
                     "[rust] LLM attempt {}/{} failed: {}",
                     attempt, max_retries, e
                 );
@@ -196,7 +203,7 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
 }
 
 fn on_shortcut(app: AppHandle) {
-    println!("[rust] shortcut triggered");
+    debug_log!("[rust] shortcut triggered");
 
     #[cfg(target_os = "windows")]
     {
@@ -253,14 +260,14 @@ fn on_shortcut(app: AppHandle) {
 
         // Simulate Ctrl+X to cut selected text
         send_key_combo(VK_CTRL, VK_X);
-        println!("[rust] Ctrl+X sent");
+        debug_log!("[rust] Ctrl+X sent");
         thread::sleep(Duration::from_millis(200));
 
         // Read clipboard
         let mut clipboard = match arboard::Clipboard::new() {
             Ok(c) => c,
             Err(e) => {
-                println!("[rust] clipboard error: {}", e);
+                debug_log!("[rust] clipboard error: {}", e);
                 return;
             }
         };
@@ -268,22 +275,22 @@ fn on_shortcut(app: AppHandle) {
         let selected_text = match clipboard.get_text() {
             Ok(t) => t,
             Err(e) => {
-                println!("[rust] clipboard read error: {}", e);
+                debug_log!("[rust] clipboard read error: {}", e);
                 return;
             }
         };
         drop(clipboard);
-        println!("[rust] captured: {:?}", selected_text);
+        debug_log!("[rust] captured: {:?}", selected_text);
 
         if selected_text.trim().is_empty() {
-            println!("[rust] no text selected, aborting");
+            debug_log!("[rust] no text selected, aborting");
             return;
         }
 
         // Limit text length to prevent excessive API usage
         const MAX_TEXT_LENGTH: usize = 5000;
         if selected_text.len() > MAX_TEXT_LENGTH {
-            println!("[rust] text too long ({} chars), truncating to {}", selected_text.len(), MAX_TEXT_LENGTH);
+            debug_log!("[rust] text too long ({} chars), truncating to {}", selected_text.len(), MAX_TEXT_LENGTH);
             // Restore original text since we won't process it
             if let Ok(mut cb) = arboard::Clipboard::new() {
                 let _ = cb.set_text(&selected_text);
@@ -316,14 +323,14 @@ fn on_shortcut(app: AppHandle) {
             return;
         }
 
-        println!("[rust] calling LLM...");
+        debug_log!("[rust] calling LLM...");
         match translate_with_retry(&selected_text, &api_key, &model, &additional_prompt) {
             Ok(result) => {
-                println!("[rust] LLM result: {:?}", result);
+                debug_log!("[rust] LLM result: {:?}", result);
                 let _ = app.emit("show-result", &result);
             }
             Err(e) => {
-                println!("[rust] LLM error: {}", e);
+                debug_log!("[rust] LLM error: {}", e);
                 let _ = app.emit("show-error", &e);
             }
         }
@@ -363,12 +370,12 @@ fn do_paste(text: String, app: AppHandle) {
         let mut clipboard = match arboard::Clipboard::new() {
             Ok(c) => c,
             Err(e) => {
-                println!("[rust] clipboard error: {}", e);
+                debug_log!("[rust] clipboard error: {}", e);
                 return;
             }
         };
         if let Err(e) = clipboard.set_text(&text) {
-            println!("[rust] clipboard write error: {}", e);
+            debug_log!("[rust] clipboard write error: {}", e);
             return;
         }
         drop(clipboard);
@@ -377,7 +384,7 @@ fn do_paste(text: String, app: AppHandle) {
         release_modifiers();
         thread::sleep(Duration::from_millis(50));
         send_key_combo(VK_CTRL, VK_V);
-        println!("[rust] pasted: {:?}", text);
+        debug_log!("[rust] pasted: {:?}", text);
     }
 }
 
@@ -442,13 +449,13 @@ fn play_tts(text: String, app: AppHandle) {
     // Check cache first
     let cached = app.state::<AppState>().audio_cache.get(&cache_key);
     if let Some(audio) = cached {
-        println!("[rust] TTS cache hit for: {:?}", text);
+        debug_log!("[rust] TTS cache hit for: {:?}", text);
         let stop = tts::new_stop_signal();
         *app.state::<AppState>().tts_stop.lock().unwrap() = Some(stop.clone());
         let app_clone = app.clone();
         thread::spawn(move || {
             if let Err(e) = tts::play_audio(&audio, &stop) {
-                println!("[rust] audio playback error: {}", e);
+                debug_log!("[rust] audio playback error: {}", e);
             }
             emit_tts(&app_clone, "tts-done");
         });
@@ -458,7 +465,7 @@ fn play_tts(text: String, app: AppHandle) {
     let api_key = config.api_key().to_string();
 
     if api_key.is_empty() {
-        println!("[rust] No API key set for TTS, skipping");
+        debug_log!("[rust] No API key set for TTS, skipping");
         emit_tts(&app, "tts-done");
         return;
     }
@@ -467,21 +474,21 @@ fn play_tts(text: String, app: AppHandle) {
     *app.state::<AppState>().tts_stop.lock().unwrap() = Some(stop.clone());
 
     let app_clone = app.clone();
-    println!("[rust] requesting TTS for: {:?}", text);
+    debug_log!("[rust] requesting TTS for: {:?}", text);
     thread::spawn(move || {
         match tts::synthesize(&api_key, &text, &voice, speed) {
             Ok(audio) => {
-                println!("[rust] TTS audio received ({} bytes)", audio.len());
+                debug_log!("[rust] TTS audio received ({} bytes)", audio.len());
                 app_clone
                     .state::<AppState>()
                     .audio_cache
                     .insert(cache_key, audio.clone());
                 if let Err(e) = tts::play_audio(&audio, &stop) {
-                    println!("[rust] audio playback error: {}", e);
+                    debug_log!("[rust] audio playback error: {}", e);
                 }
             }
             Err(e) => {
-                println!("[rust] TTS error: {}", e);
+                debug_log!("[rust] TTS error: {}", e);
             }
         }
         emit_tts(&app_clone, "tts-done");
@@ -533,6 +540,16 @@ fn preview_tts(voice: String, speed: f64, app: AppHandle) {
         }
         emit_tts(&app_clone, "tts-done");
     });
+}
+
+#[tauri::command]
+fn get_gemini_models() -> Vec<llm::GeminiModel> {
+    llm::ALLOWED_MODELS.to_vec()
+}
+
+#[tauri::command]
+fn get_tts_voices() -> Vec<tts::TtsVoice> {
+    tts::ALLOWED_VOICES.to_vec()
 }
 
 #[tauri::command]
@@ -596,6 +613,8 @@ pub fn run() {
             play_tts,
             stop_tts,
             preview_tts,
+            get_gemini_models,
+            get_tts_voices,
             get_config,
             save_config,
             open_settings,
@@ -641,7 +660,7 @@ pub fn run() {
                 .build(app)?;
 
             app.global_shortcut().register(shortcut)?;
-            println!("[rust] Global shortcut registered: {}", SHORTCUT_LABEL);
+            debug_log!("[rust] Global shortcut registered: {}", SHORTCUT_LABEL);
 
             Ok(())
         })

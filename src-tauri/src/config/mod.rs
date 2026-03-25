@@ -17,11 +17,11 @@ pub struct AppConfig {
 }
 
 fn default_gemini_model() -> String {
-    "gemini-2.5-flash".to_string()
+    crate::llm::default_model().to_string()
 }
 
 fn default_tts_voice() -> String {
-    "en-US-Standard-C".to_string()
+    crate::tts::default_voice().to_string()
 }
 
 fn default_tts_speed() -> f64 {

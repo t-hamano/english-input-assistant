@@ -35,8 +35,31 @@ fn parse_response(body: &str) -> Result<TranslationResult, String> {
         .map_err(|e| format!("Failed to parse LLM response: {}. Raw: {}", e, body))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeminiModel {
+    pub value: &'static str,
+    pub label: &'static str,
+    pub is_default: bool,
+}
+
+pub const ALLOWED_MODELS: &[GeminiModel] = &[
+    GeminiModel { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", is_default: false },
+    GeminiModel { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", is_default: true },
+];
+
+pub fn default_model() -> &'static str {
+    ALLOWED_MODELS.iter().find(|m| m.is_default).map(|m| m.value).unwrap_or("gemini-2.5-flash")
+}
+
 pub fn translate(api_key: &str, model: &str, input: &str, additional_prompt: &str) -> Result<TranslationResult, String> {
-    let client = Client::new();
+    if !ALLOWED_MODELS.iter().any(|m| m.value == model) {
+        return Err(format!("Invalid model: {}", model));
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model,

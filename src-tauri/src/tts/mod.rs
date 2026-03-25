@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 
@@ -27,8 +28,42 @@ impl AudioCache {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsVoice {
+    pub value: &'static str,
+    pub label: &'static str,
+    pub is_default: bool,
+}
+
+pub const ALLOWED_VOICES: &[TtsVoice] = &[
+    TtsVoice { value: "en-US-Standard-A", label: "Standard-A (Male)", is_default: true },
+    TtsVoice { value: "en-US-Standard-B", label: "Standard-B (Male)", is_default: false },
+    TtsVoice { value: "en-US-Standard-C", label: "Standard-C (Female)", is_default: false },
+    TtsVoice { value: "en-US-Standard-D", label: "Standard-D (Male)", is_default: false },
+    TtsVoice { value: "en-US-Standard-E", label: "Standard-E (Female)", is_default: false },
+    TtsVoice { value: "en-US-Standard-F", label: "Standard-F (Female)", is_default: false },
+    TtsVoice { value: "en-US-Standard-G", label: "Standard-G (Female)", is_default: false },
+    TtsVoice { value: "en-US-Standard-H", label: "Standard-H (Female)", is_default: false },
+    TtsVoice { value: "en-US-Standard-I", label: "Standard-I (Male)", is_default: false },
+    TtsVoice { value: "en-US-Standard-J", label: "Standard-J (Male)", is_default: false },
+];
+
+pub fn default_voice() -> &'static str {
+    ALLOWED_VOICES.iter().find(|v| v.is_default).map(|v| v.value).unwrap_or("en-US-Standard-A")
+}
+
 pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<Vec<u8>, String> {
-    let client = Client::new();
+    if !ALLOWED_VOICES.iter().any(|v| v.value == voice) {
+        return Err(format!("Invalid voice: {}", voice));
+    }
+    if !(0.5..=2.0).contains(&speed) {
+        return Err(format!("Invalid speed: {}. Must be between 0.5 and 2.0", speed));
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
     let url = format!(
         "https://texttospeech.googleapis.com/v1/text:synthesize?key={}",
         api_key
