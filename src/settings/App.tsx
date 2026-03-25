@@ -12,10 +12,14 @@ interface AppConfig {
 }
 
 const GEMINI_MODELS = [
-  { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite ($0.075 / $0.30)" },
-  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash ($0.10 / $0.40)" },
-  { value: "gemini-2.5-flash-lite-preview-06-17", label: "Gemini 2.5 Flash-Lite ($0.15 / $0.60)" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash ($0.15 / $3.50)" },
+  {
+    value: "gemini-2.5-flash-lite-preview-06-17",
+    label: "Gemini 2.5 Flash-Lite ($0.10 / $0.40)"
+  },
+  {
+    value: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash ($0.30 / $2.50)"
+  },
 ];
 
 const TTS_VOICES = [
