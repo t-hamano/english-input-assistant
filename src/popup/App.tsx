@@ -32,7 +32,12 @@ export function App() {
   const [view, setView] = useState<ViewState>({ type: "loading" });
   const [originalText, setOriginalText] = useState("");
   const [playing, setPlaying] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingPlaying, setRecordingPlaying] = useState(false);
   const resultRef = useRef<TranslationResult | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
 
   if (view.type === "result") {
     resultRef.current = view.result;
@@ -43,6 +48,17 @@ export function App() {
       listen<string>("show-loading", (e) => {
         setOriginalText(e.payload || "");
         setView({ type: "loading" });
+        setRecording(false);
+        setRecordingPlaying(false);
+        if (mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.stop();
+        }
+        if (recordedAudioRef.current) {
+          recordedAudioRef.current.pause();
+          URL.revokeObjectURL(recordedAudioRef.current.src);
+          recordedAudioRef.current = null;
+        }
+        recordedChunksRef.current = [];
       }),
       listen<TranslationResult>("show-result", (e) => {
         setView({ type: "result", result: e.payload });
@@ -92,6 +108,52 @@ export function App() {
     await invoke("retry_translation");
   }, []);
 
+  const handleRecord = useCallback(async () => {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    recordedChunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        if (recordedAudioRef.current) {
+          URL.revokeObjectURL(recordedAudioRef.current.src);
+        }
+        recordedAudioRef.current = new Audio(url);
+        setRecording(false);
+        resizeToContent();
+      };
+      recorder.start();
+      setRecording(true);
+      resizeToContent();
+    } catch {
+      // Microphone access denied or unavailable
+    }
+  }, [recording]);
+
+  const handlePlayRecording = useCallback(() => {
+    if (recordingPlaying) {
+      recordedAudioRef.current?.pause();
+      if (recordedAudioRef.current) recordedAudioRef.current.currentTime = 0;
+      setRecordingPlaying(false);
+      return;
+    }
+    const audio = recordedAudioRef.current;
+    if (!audio) return;
+    audio.onended = () => setRecordingPlaying(false);
+    audio.play();
+    setRecordingPlaying(true);
+  }, [recordingPlaying]);
+
   return (
     <div id="popup">
       <div className="drag-handle" data-tauri-drag-region />
@@ -127,12 +189,36 @@ export function App() {
               </div>
             )}
           <div className="buttons">
-            <button className="btn-primary" onClick={handleReplace}>
-              Replace
-            </button>
-            <button onClick={handlePlay} aria-pressed={playing || undefined}>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M232-81q57 0 99-31t62-82q20-51 39.5-79.5T506-345q66-53 95-113t29-146q0-120-76-196.5T358-877q-118 0-195.5 73.5T80-616h60q5-88 65.5-144.5T358-817q90 0 151 61.5T570-604q0 72-28 124.5T449-378q-39 29-62.5 63T342-231q-17 42-44.5 66T232-141q-35 0-60.5-24T141-224H81q5 60 48 101.5T232-81Zm192-457q27-27 27-66t-27-67q-27-28-66-28t-67 28q-28 28-28 67t28 66q28 27 67 27t66-27Zm323 151-47-46q20-39 30-82.5t10-90.5q0-47-10-90.5T701-779l46-46q26 49 39.5 103.5T800-607q0 60-13.5 115T747-387Zm117 114-45-43q38-63 59.5-136T900-604q0-80-21.5-153.5T818-894l45-44q47 72 72 156.5T960-604q0 92-25 175.5T864-273Z"/></svg>
-            </button>
+            <div className="buttons-left">
+              <button className="btn-primary" onClick={handleReplace}>
+                Replace
+              </button>
+              <button
+                aria-label={playing ? "Stop" : "Play"}
+                aria-pressed={playing || undefined}
+                onClick={handlePlay}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M232-81q57 0 99-31t62-82q20-51 39.5-79.5T506-345q66-53 95-113t29-146q0-120-76-196.5T358-877q-118 0-195.5 73.5T80-616h60q5-88 65.5-144.5T358-817q90 0 151 61.5T570-604q0 72-28 124.5T449-378q-39 29-62.5 63T342-231q-17 42-44.5 66T232-141q-35 0-60.5-24T141-224H81q5 60 48 101.5T232-81Zm192-457q27-27 27-66t-27-67q-27-28-66-28t-67 28q-28 28-28 67t28 66q28 27 67 27t66-27Zm323 151-47-46q20-39 30-82.5t10-90.5q0-47-10-90.5T701-779l46-46q26 49 39.5 103.5T800-607q0 60-13.5 115T747-387Zm117 114-45-43q38-63 59.5-136T900-604q0-80-21.5-153.5T818-894l45-44q47 72 72 156.5T960-604q0 92-25 175.5T864-273Z"/></svg>
+              </button>
+            </div>
+            <div className="buttons-right">
+              <button
+                aria-label={recording ? "Stop recording" : "Record"}
+                aria-pressed={recording || undefined}
+                disabled={recordingPlaying}
+                onClick={handleRecord}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z"/></svg>
+              </button>
+              <button
+                aria-label={recordingPlaying ? "Stop playback" : "Play recording"}
+                aria-pressed={recordingPlaying || undefined}
+                disabled={recording || !recordedAudioRef.current}
+                onClick={handlePlayRecording}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       )}
