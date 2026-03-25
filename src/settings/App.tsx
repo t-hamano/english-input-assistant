@@ -144,6 +144,7 @@ export function App() {
           </select>
           <button
             type="button"
+            aria-label={playing ? "Stop preview" : "Play preview"}
             aria-pressed={playing || undefined}
             onClick={() =>
               playing
