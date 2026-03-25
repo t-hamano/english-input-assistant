@@ -25,6 +25,7 @@ use tts::{AudioCache, StopSignal};
 /// Global shortcut key for triggering translation.
 const SHORTCUT_MODIFIERS: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
 const SHORTCUT_KEY: Code = Code::Space;
+#[cfg(debug_assertions)]
 const SHORTCUT_LABEL: &str = "Ctrl+Alt+Space";
 
 #[cfg(target_os = "windows")]
@@ -266,16 +267,16 @@ fn on_shortcut(app: AppHandle) {
         // Read clipboard
         let mut clipboard = match arboard::Clipboard::new() {
             Ok(c) => c,
-            Err(e) => {
-                debug_log!("[rust] clipboard error: {}", e);
+            Err(_e) => {
+                debug_log!("[rust] clipboard error: {}", _e);
                 return;
             }
         };
 
         let selected_text = match clipboard.get_text() {
             Ok(t) => t,
-            Err(e) => {
-                debug_log!("[rust] clipboard read error: {}", e);
+            Err(_e) => {
+                debug_log!("[rust] clipboard read error: {}", _e);
                 return;
             }
         };
@@ -369,13 +370,13 @@ fn do_paste(text: String, app: AppHandle) {
 
         let mut clipboard = match arboard::Clipboard::new() {
             Ok(c) => c,
-            Err(e) => {
-                debug_log!("[rust] clipboard error: {}", e);
+            Err(_e) => {
+                debug_log!("[rust] clipboard error: {}", _e);
                 return;
             }
         };
-        if let Err(e) = clipboard.set_text(&text) {
-            debug_log!("[rust] clipboard write error: {}", e);
+        if let Err(_e) = clipboard.set_text(&text) {
+            debug_log!("[rust] clipboard write error: {}", _e);
             return;
         }
         drop(clipboard);
@@ -454,8 +455,8 @@ fn play_tts(text: String, app: AppHandle) {
         *app.state::<AppState>().tts_stop.lock().unwrap() = Some(stop.clone());
         let app_clone = app.clone();
         thread::spawn(move || {
-            if let Err(e) = tts::play_audio(&audio, &stop) {
-                debug_log!("[rust] audio playback error: {}", e);
+            if let Err(_e) = tts::play_audio(&audio, &stop) {
+                debug_log!("[rust] audio playback error: {}", _e);
             }
             emit_tts(&app_clone, "tts-done");
         });
@@ -483,12 +484,12 @@ fn play_tts(text: String, app: AppHandle) {
                     .state::<AppState>()
                     .audio_cache
                     .insert(cache_key, audio.clone());
-                if let Err(e) = tts::play_audio(&audio, &stop) {
-                    debug_log!("[rust] audio playback error: {}", e);
+                if let Err(_e) = tts::play_audio(&audio, &stop) {
+                    debug_log!("[rust] audio playback error: {}", _e);
                 }
             }
-            Err(e) => {
-                debug_log!("[rust] TTS error: {}", e);
+            Err(_e) => {
+                debug_log!("[rust] TTS error: {}", _e);
             }
         }
         emit_tts(&app_clone, "tts-done");
