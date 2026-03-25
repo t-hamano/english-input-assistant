@@ -309,8 +309,7 @@ fn on_shortcut(app: AppHandle) {
         if api_key.is_empty() {
             let result = TranslationResult {
                 translated: format!("[Translated] {}", selected_text),
-                grammar: "N/A (no API key set)".to_string(),
-                improvements: "N/A".to_string(),
+                explanation: "N/A (no API key set)".to_string(),
                 source_is_english: false,
             };
             let _ = app.emit("show-result", &result);

@@ -5,8 +5,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 interface TranslationResult {
   translated: string;
-  grammar: string;
-  improvements: string;
+  explanation: string;
   source_is_english: boolean;
 }
 
@@ -177,17 +176,9 @@ export function App() {
             <div className="translated-text">{view.result.translated}</div>
           </div>
           <div className="section">
-            <div className="section-title">文法解説</div>
-            <div className="grammar">{view.result.grammar}</div>
+            <div className="section-title">{view.result.source_is_english ? "改善点・文法解説" : "文法解説"}</div>
+            <div className="explanation">{view.result.explanation}</div>
           </div>
-          {view.result.source_is_english &&
-            view.result.improvements &&
-            view.result.improvements !== "N/A" && (
-              <div className="section">
-                <div className="section-title">改善点</div>
-                <div className="improvements">{view.result.improvements}</div>
-              </div>
-            )}
           <div className="buttons">
             <div className="buttons-left">
               <button className="btn-primary" onClick={handleReplace}>

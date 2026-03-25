@@ -2,13 +2,12 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"translated":"自然な英文","grammar":"文法解説（日本語）","improvements":"改善点（日本語）","source_is_english":bool}"#;
+const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説","source_is_english":bool}"#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslationResult {
     pub translated: String,
-    pub grammar: String,
-    pub improvements: String,
+    pub explanation: String,
     #[serde(default)]
     pub source_is_english: bool,
 }
