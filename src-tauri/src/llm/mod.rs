@@ -21,18 +21,21 @@ fn build_user_message(input: &str, additional_prompt: &str) -> String {
 }
 
 fn parse_response(body: &str) -> Result<TranslationResult, String> {
-    let json_str = if let Some(start) = body.find('{') {
-        if let Some(end) = body.rfind('}') {
-            &body[start..=end]
-        } else {
-            body
+    // JSON Schema指定時は、レスポンスは常に有効なJSONなので、直接パースできます
+    match serde_json::from_str::<TranslationResult>(body.trim()) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            // フォールバック: JSONが埋め込まれている可能性に対応
+            if let Some(start) = body.find('{') {
+                if let Some(end) = body.rfind('}') {
+                    if let Ok(result) = serde_json::from_str::<TranslationResult>(&body[start..=end]) {
+                        return Ok(result);
+                    }
+                }
+            }
+            Err(format!("Failed to parse LLM response: {}. Raw: {}", e, body))
         }
-    } else {
-        body
-    };
-
-    serde_json::from_str::<TranslationResult>(json_str)
-        .map_err(|e| format!("Failed to parse LLM response: {}. Raw: {}", e, body))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,9 +69,29 @@ pub fn translate(api_key: &str, model: &str, input: &str, additional_prompt: &st
         api_key
     );
 
+    let response_schema = json!({
+        "type": "object",
+        "properties": {
+            "translated": {
+                "type": "string",
+                "description": "自然な英文"
+            },
+            "explanation": {
+                "type": "string",
+                "description": "日本語での解説"
+            },
+            "source_is_english": {
+                "type": "boolean",
+                "description": "入力が英語であるかどうか"
+            }
+        },
+        "required": ["translated", "explanation", "source_is_english"]
+    });
+
     let mut generation_config = json!({
         "temperature": 0,
-        "responseMimeType": "application/json"
+        "responseMimeType": "application/json",
+        "responseSchema": response_schema
     });
 
     // thinkingConfig is only supported by Gemini 2.5 models
