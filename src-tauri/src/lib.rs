@@ -110,6 +110,7 @@ mod keyboard {
 /// State shared between shortcut handler and commands.
 struct AppState {
     selected_text: Mutex<String>,
+    #[allow(dead_code)]
     source_hwnd: Mutex<usize>,
     audio_cache: AudioCache,
     config_store: ConfigStore,
@@ -150,6 +151,7 @@ fn get_llm_config(app: &AppHandle) -> (String, String, String) {
     (config.api_key().to_string(), config.gemini_model, config.additional_prompt)
 }
 
+#[cfg(target_os = "windows")]
 fn show_popup(app: &AppHandle, x: i32, y: i32) {
     if let Some(win) = app.get_webview_window("main") {
         // Get initial size from tauri.conf.json window config
@@ -203,6 +205,7 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
     }
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 fn on_shortcut(app: AppHandle) {
     debug_log!("[rust] shortcut triggered");
 
@@ -352,6 +355,7 @@ fn restore_original_text(app: AppHandle) {
 }
 
 #[tauri::command]
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 fn do_paste(text: String, app: AppHandle) {
     #[cfg(target_os = "windows")]
     {
