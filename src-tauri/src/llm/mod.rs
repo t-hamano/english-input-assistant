@@ -2,7 +2,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説","source_is_english":bool}"#;
+const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説","source_is_english":bool}。explanation内で語句を引用する際は必ず日本語の「」を使用し、半角ダブルクォート(")で囲わないこと（JSONが壊れるため）。"#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslationResult {
@@ -20,17 +20,45 @@ fn build_user_message(input: &str, additional_prompt: &str) -> String {
     }
 }
 
+fn extract_first_json_object(body: &str) -> Option<&str> {
+    let bytes = body.as_bytes();
+    let start = bytes.iter().position(|&b| b == b'{')?;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (i, &b) in bytes.iter().enumerate().skip(start) {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&body[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn parse_response(body: &str) -> Result<TranslationResult, String> {
-    // JSON Schema指定時は、レスポンスは常に有効なJSONなので、直接パースできます
     match serde_json::from_str::<TranslationResult>(body.trim()) {
         Ok(result) => Ok(result),
         Err(e) => {
-            // フォールバック: JSONが埋め込まれている可能性に対応
-            if let Some(start) = body.find('{') {
-                if let Some(end) = body.rfind('}') {
-                    if let Ok(result) = serde_json::from_str::<TranslationResult>(&body[start..=end]) {
-                        return Ok(result);
-                    }
+            if let Some(slice) = extract_first_json_object(body) {
+                if let Ok(result) = serde_json::from_str::<TranslationResult>(slice) {
+                    return Ok(result);
                 }
             }
             Err(format!("Failed to parse LLM response: {}. Raw: {}", e, body))
