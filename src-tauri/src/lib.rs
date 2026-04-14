@@ -35,7 +35,7 @@ mod keyboard {
         Enigo, Key, Keyboard, Mouse, Settings,
     };
 
-    /// Cut modifier: Cmd on macOS, Ctrl elsewhere.
+    /// Cut/paste modifier: Cmd on macOS, Ctrl elsewhere.
     #[cfg(target_os = "macos")]
     const ACTION_MODIFIER: Key = Key::Meta;
     #[cfg(not(target_os = "macos"))]
@@ -93,13 +93,54 @@ mod window_manager {
     }
 }
 
+/// macOS window focus management via osascript.
+/// TODO: replace with native NSWorkspace / NSRunningApplication calls for lower latency.
+#[cfg(target_os = "macos")]
+mod window_manager {
+    use std::process::Command;
+
+    /// Returns the PID of the currently frontmost application.
+    pub fn get_foreground_pid() -> i32 {
+        let output = Command::new("osascript")
+            .args([
+                "-e",
+                "tell application \"System Events\" to unix id of (first application process whose frontmost is true)",
+            ])
+            .output()
+            .ok();
+        output
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
+    }
+
+    /// Brings the application with the given PID to the foreground.
+    pub fn set_foreground_pid(pid: i32) {
+        if pid == 0 {
+            return;
+        }
+        let script = format!(
+            "tell application \"System Events\" to set frontmost of (first application process whose unix id is {}) to true",
+            pid
+        );
+        let _ = Command::new("osascript").args(["-e", &script]).output();
+    }
+
+    /// Returns the PID of the current process.
+    pub fn own_pid() -> i32 {
+        std::process::id() as i32
+    }
+}
+
 /// State shared between shortcut handler and commands.
 struct AppState {
     selected_text: Mutex<String>,
-    /// Stores the HWND of the source window to restore focus after paste.
-    /// Window focus management for macOS is not yet implemented.
+    /// Source window handle to restore focus after paste (Windows).
     #[cfg(target_os = "windows")]
     source_hwnd: Mutex<usize>,
+    /// Source application PID to restore focus after paste (macOS).
+    #[cfg(target_os = "macos")]
+    source_pid: Mutex<i32>,
     audio_cache: AudioCache,
     config_store: ConfigStore,
     tts_stop: Mutex<Option<StopSignal>>,
@@ -197,7 +238,7 @@ fn on_shortcut(app: AppHandle) {
 
     let (cx, cy) = keyboard::get_cursor_position();
 
-    // Track source window to restore focus after paste (Windows only for now).
+    // --- Windows: track source window (HWND) ---
     #[cfg(target_os = "windows")]
     let source_hwnd: usize = {
         let fg_hwnd = window_manager::get_foreground_window();
@@ -227,6 +268,26 @@ fn on_shortcut(app: AppHandle) {
         }
     };
 
+    // --- macOS: track source application (PID) ---
+    #[cfg(target_os = "macos")]
+    let source_pid: i32 = {
+        let fg_pid = window_manager::get_foreground_pid();
+        let own_pid = window_manager::own_pid();
+
+        if fg_pid == own_pid {
+            // Our popup is frontmost — use previously stored source pid
+            app.try_state::<AppState>()
+                .map(|s| *s.source_pid.lock().unwrap())
+                .unwrap_or(0)
+        } else {
+            // Store this as the source application
+            if let Some(state) = app.try_state::<AppState>() {
+                *state.source_pid.lock().unwrap() = fg_pid;
+            }
+            fg_pid
+        }
+    };
+
     // Hide popup and restore focus to source window
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.hide();
@@ -234,6 +295,10 @@ fn on_shortcut(app: AppHandle) {
     #[cfg(target_os = "windows")]
     if source_hwnd != 0 {
         window_manager::set_foreground_window(source_hwnd as *mut _);
+    }
+    #[cfg(target_os = "macos")]
+    if source_pid != 0 {
+        window_manager::set_foreground_pid(source_pid);
     }
     thread::sleep(Duration::from_millis(150));
 
@@ -350,6 +415,13 @@ fn do_paste(text: String, app: AppHandle) {
         let source_hwnd = *app.state::<AppState>().source_hwnd.lock().unwrap();
         if source_hwnd != 0 {
             window_manager::set_foreground_window(source_hwnd as *mut _);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let source_pid = *app.state::<AppState>().source_pid.lock().unwrap();
+        if source_pid != 0 {
+            window_manager::set_foreground_pid(source_pid);
         }
     }
     thread::sleep(Duration::from_millis(150));
@@ -613,6 +685,8 @@ pub fn run() {
                 selected_text: Mutex::new(String::new()),
                 #[cfg(target_os = "windows")]
                 source_hwnd: Mutex::new(0),
+                #[cfg(target_os = "macos")]
+                source_pid: Mutex::new(0),
                 audio_cache: AudioCache::new(),
                 config_store,
                 tts_stop: Mutex::new(None),
