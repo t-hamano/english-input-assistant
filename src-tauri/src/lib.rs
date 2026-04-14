@@ -28,69 +28,59 @@ const SHORTCUT_KEY: Code = Code::Space;
 #[cfg(debug_assertions)]
 const SHORTCUT_LABEL: &str = "Ctrl+Alt+Space";
 
-#[cfg(target_os = "windows")]
+/// Cross-platform keyboard and mouse input via enigo.
 mod keyboard {
-    use std::mem;
-    use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{
-        GetCursorPos, GetForegroundWindow, SendInput, SetForegroundWindow, INPUT, INPUT_KEYBOARD,
-        KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL,
+    use enigo::{
+        Direction::{Click, Press, Release},
+        Enigo, Key, Keyboard, Mouse, Settings,
     };
 
-    fn make_key_input(vk: u16, flags: u32) -> INPUT {
-        let mut input: INPUT = unsafe { mem::zeroed() };
-        input.type_ = INPUT_KEYBOARD;
-        unsafe {
-            let ki = input.u.ki_mut();
-            *ki = KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: flags,
-                time: 0,
-                dwExtraInfo: 0,
-            };
-        }
-        input
+    /// Cut modifier: Cmd on macOS, Ctrl elsewhere.
+    #[cfg(target_os = "macos")]
+    const ACTION_MODIFIER: Key = Key::Meta;
+    #[cfg(not(target_os = "macos"))]
+    const ACTION_MODIFIER: Key = Key::Control;
+
+    fn new_enigo() -> Option<Enigo> {
+        Enigo::new(&Settings::default()).ok()
     }
 
-    pub fn send_key_combo(vk_modifier: u16, vk_key: u16) {
-        let mut inputs = [
-            make_key_input(vk_modifier, 0),
-            make_key_input(vk_key, 0),
-            make_key_input(vk_key, KEYEVENTF_KEYUP),
-            make_key_input(vk_modifier, KEYEVENTF_KEYUP),
-        ];
-        unsafe {
-            SendInput(
-                inputs.len() as u32,
-                inputs.as_mut_ptr(),
-                mem::size_of::<INPUT>() as i32,
-            );
+    pub fn send_cut() {
+        if let Some(mut enigo) = new_enigo() {
+            let _ = enigo.key(ACTION_MODIFIER, Press);
+            let _ = enigo.key(Key::Unicode('x'), Click);
+            let _ = enigo.key(ACTION_MODIFIER, Release);
+        }
+    }
+
+    pub fn send_paste() {
+        if let Some(mut enigo) = new_enigo() {
+            let _ = enigo.key(ACTION_MODIFIER, Press);
+            let _ = enigo.key(Key::Unicode('v'), Click);
+            let _ = enigo.key(ACTION_MODIFIER, Release);
         }
     }
 
     pub fn release_modifiers() {
-        let modifiers = [0x11u16, 0x12, 0x10, 0x5B];
-        let mut inputs: Vec<INPUT> = modifiers
-            .iter()
-            .map(|&vk| make_key_input(vk, KEYEVENTF_KEYUP))
-            .collect();
-        unsafe {
-            SendInput(
-                inputs.len() as u32,
-                inputs.as_mut_ptr(),
-                mem::size_of::<INPUT>() as i32,
-            );
+        if let Some(mut enigo) = new_enigo() {
+            for key in [Key::Control, Key::Alt, Key::Shift, Key::Meta] {
+                let _ = enigo.key(key, Release);
+            }
         }
     }
 
     pub fn get_cursor_position() -> (i32, i32) {
-        let mut point = winapi::shared::windef::POINT { x: 0, y: 0 };
-        unsafe {
-            GetCursorPos(&mut point);
-        }
-        (point.x, point.y)
+        new_enigo()
+            .and_then(|e| e.location().ok())
+            .unwrap_or((0, 0))
     }
+}
+
+/// Windows-specific window focus management via winapi.
+#[cfg(target_os = "windows")]
+mod window_manager {
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{GetForegroundWindow, SetForegroundWindow};
 
     pub fn get_foreground_window() -> HWND {
         unsafe { GetForegroundWindow() }
@@ -101,16 +91,14 @@ mod keyboard {
             SetForegroundWindow(hwnd);
         }
     }
-
-    pub const VK_X: u16 = 0x58;
-    pub const VK_V: u16 = 0x56;
-    pub const VK_CTRL: u16 = VK_CONTROL as u16;
 }
 
 /// State shared between shortcut handler and commands.
 struct AppState {
     selected_text: Mutex<String>,
-    #[allow(dead_code)]
+    /// Stores the HWND of the source window to restore focus after paste.
+    /// Window focus management for macOS is not yet implemented.
+    #[cfg(target_os = "windows")]
     source_hwnd: Mutex<usize>,
     audio_cache: AudioCache,
     config_store: ConfigStore,
@@ -151,7 +139,6 @@ fn get_llm_config(app: &AppHandle) -> (String, String, String) {
     (config.api_key().to_string(), config.gemini_model, config.additional_prompt)
 }
 
-#[cfg(target_os = "windows")]
 fn show_popup(app: &AppHandle, x: i32, y: i32) {
     if let Some(win) = app.get_webview_window("main") {
         // Get initial size from tauri.conf.json window config
@@ -205,16 +192,15 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 fn on_shortcut(app: AppHandle) {
     debug_log!("[rust] shortcut triggered");
 
-    #[cfg(target_os = "windows")]
-    {
-        use keyboard::*;
+    let (cx, cy) = keyboard::get_cursor_position();
 
-        let (cx, cy) = get_cursor_position();
-        let fg_hwnd = get_foreground_window();
+    // Track source window to restore focus after paste (Windows only for now).
+    #[cfg(target_os = "windows")]
+    let source_hwnd: usize = {
+        let fg_hwnd = window_manager::get_foreground_window();
 
         // Collect HWNDs of all our own windows
         let own_hwnds: Vec<usize> = ["main", "settings"]
@@ -226,9 +212,7 @@ fn on_shortcut(app: AppHandle) {
             })
             .collect();
 
-        let fg_is_own = own_hwnds.contains(&(fg_hwnd as usize));
-
-        let source_hwnd = if fg_is_own {
+        if own_hwnds.contains(&(fg_hwnd as usize)) {
             // Foreground is one of our windows — use previously stored source window
             app.try_state::<AppState>()
                 .map(|s| *s.source_hwnd.lock().unwrap())
@@ -240,103 +224,103 @@ fn on_shortcut(app: AppHandle) {
                 *state.source_hwnd.lock().unwrap() = hwnd;
             }
             hwnd
-        };
-
-        // Hide popup if visible, then restore focus to source window
-        if let Some(win) = app.get_webview_window("main") {
-            let _ = win.hide();
         }
-        if source_hwnd != 0 {
-            set_foreground_window(source_hwnd as *mut _);
+    };
+
+    // Hide popup and restore focus to source window
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+    #[cfg(target_os = "windows")]
+    if source_hwnd != 0 {
+        window_manager::set_foreground_window(source_hwnd as *mut _);
+    }
+    thread::sleep(Duration::from_millis(150));
+
+    // Wait for user to release shortcut keys
+    thread::sleep(Duration::from_millis(300));
+    keyboard::release_modifiers();
+    thread::sleep(Duration::from_millis(50));
+
+    // Clear clipboard before cut so we can detect if anything was actually selected
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text("");
+    }
+    thread::sleep(Duration::from_millis(50));
+
+    keyboard::send_cut();
+    debug_log!("[rust] Cut sent");
+    thread::sleep(Duration::from_millis(200));
+
+    // Read clipboard
+    let mut clipboard = match arboard::Clipboard::new() {
+        Ok(c) => c,
+        Err(_e) => {
+            debug_log!("[rust] clipboard error: {}", _e);
+            return;
         }
-        thread::sleep(Duration::from_millis(150));
+    };
 
-        // Wait for user to release shortcut keys
-        thread::sleep(Duration::from_millis(300));
-        release_modifiers();
-        thread::sleep(Duration::from_millis(50));
+    let selected_text = match clipboard.get_text() {
+        Ok(t) => t,
+        Err(_e) => {
+            debug_log!("[rust] clipboard read error: {}", _e);
+            return;
+        }
+    };
+    drop(clipboard);
+    debug_log!("[rust] captured: {:?}", selected_text);
 
-        // Clear clipboard before Ctrl+X so we can detect if anything was actually selected
+    if selected_text.trim().is_empty() {
+        debug_log!("[rust] no text selected, aborting");
+        return;
+    }
+
+    // Limit text length to prevent excessive API usage
+    const MAX_TEXT_LENGTH: usize = 5000;
+    if selected_text.len() > MAX_TEXT_LENGTH {
+        debug_log!("[rust] text too long ({} chars), truncating to {}", selected_text.len(), MAX_TEXT_LENGTH);
+        // Restore original text since we won't process it
         if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text("");
+            let _ = cb.set_text(&selected_text);
         }
-        thread::sleep(Duration::from_millis(50));
-
-        // Simulate Ctrl+X to cut selected text
-        send_key_combo(VK_CTRL, VK_X);
-        debug_log!("[rust] Ctrl+X sent");
-        thread::sleep(Duration::from_millis(200));
-
-        // Read clipboard
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(c) => c,
-            Err(_e) => {
-                debug_log!("[rust] clipboard error: {}", _e);
-                return;
-            }
-        };
-
-        let selected_text = match clipboard.get_text() {
-            Ok(t) => t,
-            Err(_e) => {
-                debug_log!("[rust] clipboard read error: {}", _e);
-                return;
-            }
-        };
-        drop(clipboard);
-        debug_log!("[rust] captured: {:?}", selected_text);
-
-        if selected_text.trim().is_empty() {
-            debug_log!("[rust] no text selected, aborting");
-            return;
-        }
-
-        // Limit text length to prevent excessive API usage
-        const MAX_TEXT_LENGTH: usize = 5000;
-        if selected_text.len() > MAX_TEXT_LENGTH {
-            debug_log!("[rust] text too long ({} chars), truncating to {}", selected_text.len(), MAX_TEXT_LENGTH);
-            // Restore original text since we won't process it
-            if let Ok(mut cb) = arboard::Clipboard::new() {
-                let _ = cb.set_text(&selected_text);
-            }
-            send_key_combo(VK_CTRL, VK_V);
-            let _ = app.emit("show-error", "Text is too long (max 5000 characters). Please select a shorter text.");
-            show_popup(&app, cx, cy);
-            return;
-        }
-
-        // Store selected text for retry
-        if let Some(state) = app.try_state::<AppState>() {
-            *state.selected_text.lock().unwrap() = selected_text.clone();
-        }
-
-        // Show popup with loading state
-        let _ = app.emit("show-loading", &selected_text);
+        keyboard::send_paste();
+        let _ = app.emit("show-error", "Text is too long (max 5000 characters). Please select a shorter text.");
         show_popup(&app, cx, cy);
+        return;
+    }
 
-        // Call LLM API
-        let (api_key, model, additional_prompt) = get_llm_config(&app);
+    // Store selected text for retry
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.selected_text.lock().unwrap() = selected_text.clone();
+    }
 
-        if api_key.is_empty() {
-            let result = TranslationResult {
-                translated: format!("[Translated] {}", selected_text),
-                explanation: "N/A (no API key set)".to_string(),
-                source_is_english: false,
-            };
+    // Show popup with loading state
+    let _ = app.emit("show-loading", &selected_text);
+    show_popup(&app, cx, cy);
+
+    // Call LLM API
+    let (api_key, model, additional_prompt) = get_llm_config(&app);
+
+    if api_key.is_empty() {
+        let result = TranslationResult {
+            translated: format!("[Translated] {}", selected_text),
+            explanation: "N/A (no API key set)".to_string(),
+            source_is_english: false,
+        };
+        let _ = app.emit("show-result", &result);
+        return;
+    }
+
+    debug_log!("[rust] calling LLM...");
+    match translate_with_retry(&selected_text, &api_key, &model, &additional_prompt) {
+        Ok(result) => {
+            debug_log!("[rust] LLM result: {:?}", result);
             let _ = app.emit("show-result", &result);
-            return;
         }
-
-        debug_log!("[rust] calling LLM...");
-        match translate_with_retry(&selected_text, &api_key, &model, &additional_prompt) {
-            Ok(result) => {
-                debug_log!("[rust] LLM result: {:?}", result);
-                let _ = app.emit("show-result", &result);
-            }
-            Err(e) => {
-                debug_log!("[rust] LLM error: {}", e);
-                let _ = app.emit("show-error", &e);
-            }
+        Err(e) => {
+            debug_log!("[rust] LLM error: {}", e);
+            let _ = app.emit("show-error", &e);
         }
     }
 }
@@ -355,42 +339,39 @@ fn restore_original_text(app: AppHandle) {
 }
 
 #[tauri::command]
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 fn do_paste(text: String, app: AppHandle) {
+    // Hide popup and restore focus to source window
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+
     #[cfg(target_os = "windows")]
     {
-        use keyboard::*;
-
-        // Hide popup and restore focus to source window
-        if let Some(win) = app.get_webview_window("main") {
-            let _ = win.hide();
-        }
-
         let source_hwnd = *app.state::<AppState>().source_hwnd.lock().unwrap();
         if source_hwnd != 0 {
-            set_foreground_window(source_hwnd as *mut _);
+            window_manager::set_foreground_window(source_hwnd as *mut _);
         }
-        thread::sleep(Duration::from_millis(150));
+    }
+    thread::sleep(Duration::from_millis(150));
 
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(c) => c,
-            Err(_e) => {
-                debug_log!("[rust] clipboard error: {}", _e);
-                return;
-            }
-        };
-        if let Err(_e) = clipboard.set_text(&text) {
-            debug_log!("[rust] clipboard write error: {}", _e);
+    let mut clipboard = match arboard::Clipboard::new() {
+        Ok(c) => c,
+        Err(_e) => {
+            debug_log!("[rust] clipboard error: {}", _e);
             return;
         }
-        drop(clipboard);
-        thread::sleep(Duration::from_millis(100));
-
-        release_modifiers();
-        thread::sleep(Duration::from_millis(50));
-        send_key_combo(VK_CTRL, VK_V);
-        debug_log!("[rust] pasted: {:?}", text);
+    };
+    if let Err(_e) = clipboard.set_text(&text) {
+        debug_log!("[rust] clipboard write error: {}", _e);
+        return;
     }
+    drop(clipboard);
+    thread::sleep(Duration::from_millis(100));
+
+    keyboard::release_modifiers();
+    thread::sleep(Duration::from_millis(50));
+    keyboard::send_paste();
+    debug_log!("[rust] pasted: {:?}", text);
 }
 
 #[tauri::command]
@@ -630,6 +611,7 @@ pub fn run() {
             let config_store = ConfigStore::new(app_data_dir);
             app.manage(AppState {
                 selected_text: Mutex::new(String::new()),
+                #[cfg(target_os = "windows")]
                 source_hwnd: Mutex::new(0),
                 audio_cache: AudioCache::new(),
                 config_store,
