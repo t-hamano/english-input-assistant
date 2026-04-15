@@ -7,12 +7,14 @@
   padding: 16px;
 }
 
-.voice {
+.voice,
+.shortcut {
   display: flex;
   gap: 8px;
 }
 
-.voice select {
+.voice select,
+.shortcut input {
   flex: 1;
 }
 
@@ -36,4 +38,17 @@
 .buttons {
   display: flex;
   gap: 8px;
+}
+
+.shortcut-input {
+  cursor: pointer;
+  font-family: monospace!important;
+}
+
+.error {
+  padding: 8px;
+  border: 1px solid #d63638;
+  border-radius: 2px;
+  background: #fcf0f1;
+  color: #d63638;
 }

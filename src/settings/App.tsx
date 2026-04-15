@@ -9,6 +9,30 @@ interface AppConfig {
   gemini_model: string;
   tts_voice: string;
   tts_speed: number;
+  shortcut: string;
+}
+
+const MODIFIER_CODES = new Set([
+  "ControlLeft", "ControlRight",
+  "AltLeft", "AltRight",
+  "ShiftLeft", "ShiftRight",
+  "MetaLeft", "MetaRight",
+  "OSLeft", "OSRight",
+]);
+
+function formatKeyName(code: string): string {
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return "Num" + code.slice(6);
+  if (code.startsWith("Arrow")) return code.slice(5);
+  return code;
+}
+
+function formatShortcut(s: string): string {
+  if (!s) return "";
+  const parts = s.split("+");
+  const last = parts.pop()!;
+  return [...parts, formatKeyName(last)].join("+");
 }
 
 interface GeminiModel {
@@ -34,6 +58,8 @@ export function App() {
   const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
   const [playing, setPlaying] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const update = useCallback(
     <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
@@ -70,9 +96,42 @@ export function App() {
 
   const handleSave = useCallback(async () => {
     if (!settings) return;
-    await invoke("save_config", { config: settings });
-    await getCurrentWindow().close();
+    try {
+      await invoke("save_config", { config: settings });
+      await getCurrentWindow().close();
+    } catch (e) {
+      setError(String(e));
+    }
   }, [settings]);
+
+  const handleShortcutKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.code === "Escape") {
+        setCapturing(false);
+        e.currentTarget.blur();
+        return;
+      }
+
+      if (MODIFIER_CODES.has(e.code)) return;
+
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.metaKey) parts.push("Meta");
+      if (parts.length === 0) return;
+      parts.push(e.code);
+
+      update("shortcut", parts.join("+"));
+      setError(null);
+      setCapturing(false);
+      e.currentTarget.blur();
+    },
+    [update]
+  );
 
   const handleCancel = useCallback(async () => {
     await getCurrentWindow().close();
@@ -82,6 +141,32 @@ export function App() {
 
   return (
     <div className="content">
+      <div className="field">
+        <label htmlFor="shortcut">Shortcut Key</label>
+        <div className="shortcut">
+          <input
+            type="text"
+            id="shortcut"
+            readOnly
+            className="shortcut-input"
+            value={capturing ? "Press keys..." : formatShortcut(settings.shortcut)}
+            placeholder="Click to record"
+            onFocus={() => setCapturing(true)}
+            onBlur={() => setCapturing(false)}
+            onKeyDown={handleShortcutKeyDown}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              update("shortcut", "");
+              setError(null);
+            }}
+            disabled={!settings.shortcut}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
       <div className="field">
         <label htmlFor="google-key">Google API Key</label>
         <input
@@ -168,6 +253,7 @@ export function App() {
           Launch at startup
         </label>
       </div>
+      {error && <div className="error">{error}</div>}
       <div className="buttons">
         <button className="btn-primary" onClick={handleSave}>
           Save

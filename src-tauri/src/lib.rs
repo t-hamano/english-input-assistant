@@ -9,6 +9,7 @@ macro_rules! debug_log {
     };
 }
 
+use std::str::FromStr;
 use std::sync::Mutex;
 use std::{thread, time::Duration};
 
@@ -16,17 +17,11 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use config::{AppConfig, ConfigStore};
 use llm::TranslationResult;
 use tts::{AudioCache, StopSignal};
-
-/// Global shortcut key for triggering translation.
-const SHORTCUT_MODIFIERS: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
-const SHORTCUT_KEY: Code = Code::Space;
-#[cfg(debug_assertions)]
-const SHORTCUT_LABEL: &str = "Ctrl+Alt+Space";
 
 /// Cross-platform keyboard and mouse input via enigo.
 mod keyboard {
@@ -617,6 +612,27 @@ fn get_config(app: AppHandle) -> AppConfig {
 
 #[tauri::command]
 fn save_config(config: AppConfig, app: AppHandle) -> Result<(), String> {
+    // Validate the new shortcut before doing anything else (empty = no shortcut)
+    let new_shortcut = if config.shortcut.is_empty() {
+        None
+    } else {
+        Some(
+            Shortcut::from_str(&config.shortcut)
+                .map_err(|e| format!("Invalid shortcut \"{}\": {}", config.shortcut, e))?,
+        )
+    };
+
+    // Re-register the global shortcut if it changed
+    let current_shortcut = app.state::<AppState>().config_store.get().shortcut;
+    if current_shortcut != config.shortcut {
+        let gs = app.global_shortcut();
+        let _ = gs.unregister_all();
+        if let Some(shortcut) = new_shortcut {
+            gs.register(shortcut)
+                .map_err(|e| format!("Failed to register shortcut: {}", e))?;
+        }
+    }
+
     // Update autostart based on config
     let autostart = app.autolaunch();
     if config.auto_start {
@@ -645,8 +661,6 @@ fn open_settings(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let shortcut = Shortcut::new(Some(SHORTCUT_MODIFIERS), SHORTCUT_KEY);
-
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -681,6 +695,7 @@ pub fn run() {
             // Initialize config store
             let app_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
             let config_store = ConfigStore::new(app_data_dir);
+            let shortcut_str = config_store.get().shortcut;
             app.manage(AppState {
                 selected_text: Mutex::new(String::new()),
                 #[cfg(target_os = "windows")]
@@ -720,8 +735,19 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            app.global_shortcut().register(shortcut)?;
-            debug_log!("[rust] Global shortcut registered: {}", SHORTCUT_LABEL);
+            if !shortcut_str.is_empty() {
+                match Shortcut::from_str(&shortcut_str) {
+                    Ok(shortcut) => {
+                        app.global_shortcut().register(shortcut)?;
+                        debug_log!("[rust] Global shortcut registered: {}", shortcut_str);
+                    }
+                    Err(_e) => {
+                        debug_log!("[rust] Invalid shortcut in config: {} ({})", shortcut_str, _e);
+                    }
+                }
+            } else {
+                debug_log!("[rust] No shortcut configured");
+            }
 
             Ok(())
         })
