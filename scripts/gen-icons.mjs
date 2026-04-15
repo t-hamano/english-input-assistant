@@ -1,5 +1,5 @@
 /**
- * Generates icons for macOS and Windows from translate.svg.
+ * Generates icons for macOS and Windows from app-icon.svg.
  * Run with: npm run gen-icons
  *
  * Outputs:
@@ -11,7 +11,7 @@
  */
 import sharp from 'sharp';
 import { execSync } from 'child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const ICON_DIR = './src-tauri/icons';
@@ -20,13 +20,10 @@ const BG_COLOR = '#3858e9';
 // Apple HIG: 224 / 1024 ≈ 21.875%
 const MACOS_RADIUS_RATIO = 0.21875;
 
-// Path data from translate.svg (viewBox="0 -960 960 960")
-const TRANSLATE_PATH =
-  'm476-80 182-480h84L924-80h-84l-43-122H603L560-80h-84Z' +
-  'M160-200l-56-56 202-202q-35-35-63.5-80T190-640h84q20 39 40 68t48 58' +
-  'q33-33 68.5-92.5T484-720H40v-80h280v-80h80v80h280v80H564' +
-  'q-21 72-63 148t-83 116l96 98-30 82-122-125-202 201Z' +
-  'm468-72h144l-72-204-72 204Z';
+// Path data read from app-icon.svg (viewBox="0 -960 960 960")
+const svgSrc = readFileSync('./app-icon.svg', 'utf8');
+const TRANSLATE_PATH = svgSrc.match(/\bd="([^"]+)"/)?.[1];
+if (!TRANSLATE_PATH) throw new Error('No <path d="..."> found in app-icon.svg');
 
 /**
  * SVG transform that maps the icon's coordinate space (viewBox 0 -960 960 960)
@@ -126,7 +123,7 @@ async function genIco() {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('Generating icons from translate.svg...\n');
+  console.log('Generating icons from app-icon.svg...\n');
   await genPngs();
   await genTrayIconMac();
   await genIcns();
