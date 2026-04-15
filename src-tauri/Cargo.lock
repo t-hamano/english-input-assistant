@@ -983,6 +983,7 @@ dependencies = [
  "arboard",
  "base64 0.22.1",
  "enigo",
+ "image",
  "reqwest",
  "rodio",
  "serde",

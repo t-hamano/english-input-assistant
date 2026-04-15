@@ -615,10 +615,27 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
+            // macOS: use a dedicated template icon for the menu bar (black symbol,
+            // transparent background). icon_as_template lets the OS adapt it to
+            // dark/light mode automatically.
+            #[cfg(target_os = "macos")]
+            let tray_icon = {
+                use image::GenericImageView;
+                let path = app
+                    .path()
+                    .resource_dir()
+                    .expect("resource dir")
+                    .join("icons/tray-icon-mac.png");
+                let img = image::open(&path).expect("failed to load tray icon");
+                let (width, height) = img.dimensions();
+                let rgba = img.into_rgba8().into_raw();
+                tauri::image::Image::new_owned(rgba, width, height)
+            };
+            #[cfg(not(target_os = "macos"))]
             let tray_icon = app.default_window_icon().cloned()
                 .expect("failed to load tray icon");
 
-            TrayIconBuilder::new()
+            let tray_builder = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&tray_menu)
                 .tooltip("English Input Assistant")
@@ -630,8 +647,12 @@ pub fn run() {
                         app.exit(0);
                     }
                     _ => {}
-                })
-                .build(app)?;
+                });
+
+            #[cfg(target_os = "macos")]
+            let tray_builder = tray_builder.icon_as_template(true);
+
+            tray_builder.build(app)?;
 
             if !shortcut_str.is_empty() {
                 match Shortcut::from_str(&shortcut_str) {
