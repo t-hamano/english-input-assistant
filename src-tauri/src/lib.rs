@@ -1,6 +1,8 @@
 mod config;
+mod keyboard;
 mod llm;
 mod tts;
+mod window_manager;
 
 macro_rules! debug_log {
     ($($arg:tt)*) => {
@@ -9,6 +11,7 @@ macro_rules! debug_log {
     };
 }
 
+use std::str::FromStr;
 use std::sync::Mutex;
 use std::{thread, time::Duration};
 
@@ -16,121 +19,11 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use config::{AppConfig, ConfigStore};
 use llm::TranslationResult;
 use tts::{AudioCache, StopSignal};
-
-/// Global shortcut key for triggering translation.
-const SHORTCUT_MODIFIERS: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
-const SHORTCUT_KEY: Code = Code::Space;
-#[cfg(debug_assertions)]
-const SHORTCUT_LABEL: &str = "Ctrl+Alt+Space";
-
-/// Cross-platform keyboard and mouse input via enigo.
-mod keyboard {
-    use enigo::{
-        Direction::{Click, Press, Release},
-        Enigo, Key, Keyboard, Mouse, Settings,
-    };
-
-    /// Cut/paste modifier: Cmd on macOS, Ctrl elsewhere.
-    #[cfg(target_os = "macos")]
-    const ACTION_MODIFIER: Key = Key::Meta;
-    #[cfg(not(target_os = "macos"))]
-    const ACTION_MODIFIER: Key = Key::Control;
-
-    fn new_enigo() -> Option<Enigo> {
-        Enigo::new(&Settings::default()).ok()
-    }
-
-    pub fn send_cut() {
-        if let Some(mut enigo) = new_enigo() {
-            let _ = enigo.key(ACTION_MODIFIER, Press);
-            let _ = enigo.key(Key::Unicode('x'), Click);
-            let _ = enigo.key(ACTION_MODIFIER, Release);
-        }
-    }
-
-    pub fn send_paste() {
-        if let Some(mut enigo) = new_enigo() {
-            let _ = enigo.key(ACTION_MODIFIER, Press);
-            let _ = enigo.key(Key::Unicode('v'), Click);
-            let _ = enigo.key(ACTION_MODIFIER, Release);
-        }
-    }
-
-    pub fn release_modifiers() {
-        if let Some(mut enigo) = new_enigo() {
-            for key in [Key::Control, Key::Alt, Key::Shift, Key::Meta] {
-                let _ = enigo.key(key, Release);
-            }
-        }
-    }
-
-    pub fn get_cursor_position() -> (i32, i32) {
-        new_enigo()
-            .and_then(|e| e.location().ok())
-            .unwrap_or((0, 0))
-    }
-}
-
-/// Windows-specific window focus management via winapi.
-#[cfg(target_os = "windows")]
-mod window_manager {
-    use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{GetForegroundWindow, SetForegroundWindow};
-
-    pub fn get_foreground_window() -> HWND {
-        unsafe { GetForegroundWindow() }
-    }
-
-    pub fn set_foreground_window(hwnd: HWND) {
-        unsafe {
-            SetForegroundWindow(hwnd);
-        }
-    }
-}
-
-/// macOS window focus management via osascript.
-/// TODO: replace with native NSWorkspace / NSRunningApplication calls for lower latency.
-#[cfg(target_os = "macos")]
-mod window_manager {
-    use std::process::Command;
-
-    /// Returns the PID of the currently frontmost application.
-    pub fn get_foreground_pid() -> i32 {
-        let output = Command::new("osascript")
-            .args([
-                "-e",
-                "tell application \"System Events\" to unix id of (first application process whose frontmost is true)",
-            ])
-            .output()
-            .ok();
-        output
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0)
-    }
-
-    /// Brings the application with the given PID to the foreground.
-    pub fn set_foreground_pid(pid: i32) {
-        if pid == 0 {
-            return;
-        }
-        let script = format!(
-            "tell application \"System Events\" to set frontmost of (first application process whose unix id is {}) to true",
-            pid
-        );
-        let _ = Command::new("osascript").args(["-e", &script]).output();
-    }
-
-    /// Returns the PID of the current process.
-    pub fn own_pid() -> i32 {
-        std::process::id() as i32
-    }
-}
 
 /// State shared between shortcut handler and commands.
 struct AppState {
@@ -617,6 +510,27 @@ fn get_config(app: AppHandle) -> AppConfig {
 
 #[tauri::command]
 fn save_config(config: AppConfig, app: AppHandle) -> Result<(), String> {
+    // Validate the new shortcut before doing anything else (empty = no shortcut)
+    let new_shortcut = if config.shortcut.is_empty() {
+        None
+    } else {
+        Some(
+            Shortcut::from_str(&config.shortcut)
+                .map_err(|e| format!("Invalid shortcut \"{}\": {}", config.shortcut, e))?,
+        )
+    };
+
+    // Re-register the global shortcut if it changed
+    let current_shortcut = app.state::<AppState>().config_store.get().shortcut;
+    if current_shortcut != config.shortcut {
+        let gs = app.global_shortcut();
+        let _ = gs.unregister_all();
+        if let Some(shortcut) = new_shortcut {
+            gs.register(shortcut)
+                .map_err(|e| format!("Failed to register shortcut: {}", e))?;
+        }
+    }
+
     // Update autostart based on config
     let autostart = app.autolaunch();
     if config.auto_start {
@@ -645,8 +559,6 @@ fn open_settings(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let shortcut = Shortcut::new(Some(SHORTCUT_MODIFIERS), SHORTCUT_KEY);
-
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -681,6 +593,7 @@ pub fn run() {
             // Initialize config store
             let app_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
             let config_store = ConfigStore::new(app_data_dir);
+            let shortcut_str = config_store.get().shortcut;
             app.manage(AppState {
                 selected_text: Mutex::new(String::new()),
                 #[cfg(target_os = "windows")]
@@ -741,8 +654,19 @@ pub fn run() {
 
             tray_builder.build(app)?;
 
-            app.global_shortcut().register(shortcut)?;
-            debug_log!("[rust] Global shortcut registered: {}", SHORTCUT_LABEL);
+            if !shortcut_str.is_empty() {
+                match Shortcut::from_str(&shortcut_str) {
+                    Ok(shortcut) => {
+                        app.global_shortcut().register(shortcut)?;
+                        debug_log!("[rust] Global shortcut registered: {}", shortcut_str);
+                    }
+                    Err(_e) => {
+                        debug_log!("[rust] Invalid shortcut in config: {} ({})", shortcut_str, _e);
+                    }
+                }
+            } else {
+                debug_log!("[rust] No shortcut configured");
+            }
 
             Ok(())
         })

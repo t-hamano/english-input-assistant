@@ -14,6 +14,8 @@ pub struct AppConfig {
     pub tts_voice: String,
     #[serde(default = "default_tts_speed")]
     pub tts_speed: f64,
+    #[serde(default = "default_shortcut")]
+    pub shortcut: String,
 }
 
 fn default_gemini_model() -> String {
@@ -28,6 +30,10 @@ fn default_tts_speed() -> f64 {
     1.0
 }
 
+pub fn default_shortcut() -> String {
+    String::new()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -37,6 +43,7 @@ impl Default for AppConfig {
             gemini_model: default_gemini_model(),
             tts_voice: default_tts_voice(),
             tts_speed: default_tts_speed(),
+            shortcut: default_shortcut(),
         }
     }
 }
