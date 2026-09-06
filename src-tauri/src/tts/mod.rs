@@ -62,12 +62,10 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
-    let url = format!(
-        "https://texttospeech.googleapis.com/v1/text:synthesize?key={}",
-        api_key
-    );
+    let url = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
     // Extract language code: "en-US-Standard-C" -> "en-US"
     let language_code = voice.splitn(3, '-').take(2).collect::<Vec<_>>().join("-");
@@ -85,19 +83,20 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
     });
 
     let response = client
-        .post(&url)
+        .post(url)
+        .header("x-goog-api-key", crate::google_api::api_key_header(api_key)?)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
-        .map_err(|e| format!("Google TTS request failed: {}", e))?;
+        .map_err(|e| crate::google_api::request_error("Google TTS", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().unwrap_or_default();
-        return Err(format!("Google TTS API error {}: {}", status, text));
+        return Err(format!("Google TTS API error: HTTP {status}"));
     }
 
-    let resp: serde_json::Value = response.json().map_err(|e| e.to_string())?;
+    let resp: serde_json::Value = response.json()
+        .map_err(|_| "Could not read the Google TTS response.".to_string())?;
     let audio_b64 = resp["audioContent"]
         .as_str()
         .ok_or("Missing audioContent in Google TTS response")?;

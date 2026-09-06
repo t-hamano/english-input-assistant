@@ -13,6 +13,7 @@ fn http_client() -> Result<&'static Client, String> {
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -74,13 +75,13 @@ fn extract_first_json_object(body: &str) -> Option<&str> {
 fn parse_response(body: &str) -> Result<TranslationResult, String> {
     match serde_json::from_str::<TranslationResult>(body.trim()) {
         Ok(result) => Ok(result),
-        Err(e) => {
+        Err(_) => {
             if let Some(slice) = extract_first_json_object(body) {
                 if let Ok(result) = serde_json::from_str::<TranslationResult>(slice) {
                     return Ok(result);
                 }
             }
-            Err(format!("Failed to parse LLM response: {}. Raw: {}", e, body))
+            Err("Failed to parse LLM response.".to_string())
         }
     }
 }
@@ -115,9 +116,8 @@ pub fn translate(
 
     let client = http_client()?;
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-        model,
-        api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse",
+        model
     );
 
     let response_schema = json!({
@@ -166,15 +166,15 @@ pub fn translate(
 
     let response = client
         .post(&url)
+        .header("x-goog-api-key", crate::google_api::api_key_header(api_key)?)
         .header("content-type", "application/json")
         .json(&body)
         .send()
-        .map_err(|e| format!("Gemini request failed: {}", e))?;
+        .map_err(|e| crate::google_api::request_error("Gemini", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().unwrap_or_default();
-        return Err(format!("Gemini API error {}: {}", status, text));
+        return Err(format!("Gemini API error: HTTP {status}"));
     }
 
     stream::read_response(std::io::BufReader::new(response), on_translation, is_current)

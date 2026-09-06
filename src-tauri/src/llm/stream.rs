@@ -70,16 +70,16 @@ impl StreamResponse {
         }
         let chunk: Value = serde_json::from_str(data)
             .map_err(|e| format!("Invalid Gemini stream event: {}", e))?;
-        if let Some(error) = chunk.get("error") {
-            return Err(format!("Gemini stream error: {}", error));
+        if chunk.get("error").is_some() {
+            return Err("Gemini returned a stream error.".to_string());
         }
-        if let Some(reason) = chunk["promptFeedback"]["blockReason"].as_str() {
-            return Err(format!("Gemini blocked the request: {}", reason));
+        if chunk["promptFeedback"]["blockReason"].as_str().is_some() {
+            return Err("Gemini blocked the request.".to_string());
         }
         let candidate = &chunk["candidates"][0];
         if let Some(reason) = candidate["finishReason"].as_str() {
             if reason != "STOP" {
-                return Err(format!("Gemini generation stopped: {}", reason));
+                return Err("Gemini generation stopped before completion.".to_string());
             }
             self.finished = true;
         }
@@ -135,7 +135,7 @@ pub(super) fn read_response(
         line.clear();
         let count = reader
             .read_line(&mut line)
-            .map_err(|e| format!("Gemini stream read failed: {}", e))?;
+            .map_err(|_| "Gemini stream read failed.".to_string())?;
         if !is_current() {
             return Err("Translation cancelled".to_string());
         }
@@ -154,4 +154,28 @@ pub(super) fn read_response(
         }
     }
     response.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_error_details_are_not_exposed() {
+        for data in [
+            r#"{"error":{"message":"dummy-secret-api-key"}}"#,
+            r#"{"promptFeedback":{"blockReason":"dummy-secret-api-key"}}"#,
+            r#"{"candidates":[{"finishReason":"dummy-secret-api-key"}]}"#,
+        ] {
+            let input = format!("data: {data}\n\n");
+            let error = read_response(std::io::Cursor::new(input), |_| {}, || true).unwrap_err();
+            assert!(!error.contains("dummy-secret-api-key"));
+        }
+    }
+
+    #[test]
+    fn malformed_translation_does_not_echo_raw_content() {
+        let error = parse_response(r#"{"translated": "dummy-secret-api-key"}"#).unwrap_err();
+        assert!(!error.contains("dummy-secret-api-key"));
+    }
 }
