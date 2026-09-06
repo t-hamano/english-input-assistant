@@ -65,20 +65,13 @@ body,
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   padding: 32px 16px 16px;
 }
 
-.section:has(+ .section) {
+.original-text {
   padding-bottom: 8px;
   border-bottom: 1px solid #ddd;
-}
-
-.section-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #888;
-  margin-bottom: 4px;
 }
 
 .explanation {

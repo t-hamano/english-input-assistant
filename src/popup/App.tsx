@@ -172,27 +172,18 @@ export function App() {
       )}
       {view.type === "result" && (
         <div className="content">
-          <div className="section">
-            <div className="section-title">元テキスト</div>
-            <div className="original-text">{originalText}</div>
-          </div>
-          <div className="section">
-            <div className="section-title">推奨英文</div>
-            <div className="translated-text">{view.result.translated}</div>
-          </div>
-          <div className="section">
-            <div className="section-title" id="explanation-title">{view.result.source_is_english ? "改善点・文法解説" : "文法解説"}</div>
-            <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-labelledby="explanation-title" tabIndex={0}>
-              {view.error ? (
-                <div role="alert">
-                  <p className="error-msg">Could not load the explanation. You can still use the English text.</p>
-                  <details><summary>Error details</summary>{view.error}</details>
-                  <button onClick={handleRetry}>Retry translation</button>
-                </div>
-              ) : !view.complete ? (
-                <span role="status">Loading explanation...</span>
-              ) : view.result.explanation}
-            </div>
+          <div className="original-text">{originalText}</div>
+          <div className="translated-text">{view.result.translated}</div>
+          <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-label={view.result.source_is_english ? "改善点・文法解説" : "文法解説"} tabIndex={0}>
+            {view.error ? (
+              <div role="alert">
+                <p className="error-msg">Could not load the explanation. You can still use the English text.</p>
+                <details><summary>Error details</summary>{view.error}</details>
+                <button onClick={handleRetry}>Retry translation</button>
+              </div>
+            ) : !view.complete ? (
+              <span role="status">Loading explanation...</span>
+            ) : view.result.explanation}
           </div>
           <div className="buttons">
             <div className="buttons-left">
