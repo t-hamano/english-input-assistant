@@ -76,6 +76,7 @@ export function App() {
     const unlisten = [
       getCurrentWindow().listen("tts-playing", () => setPlaying(true)),
       getCurrentWindow().listen("tts-done", () => setPlaying(false)),
+      getCurrentWindow().listen<string>("tts-error", (e) => setError(e.payload)),
     ];
     return () => {
       unlisten.forEach((u) => u.then((f) => f()));
@@ -223,6 +224,7 @@ export function App() {
           value={settings.google_api_key}
           onChange={(e) => update("google_api_key", e.target.value)}
         />
+        <small>Stored securely on this device. Clear the field and save to remove it.</small>
       </div>
       <div className="field">
         <label htmlFor="gemini-model">Gemini Model</label>

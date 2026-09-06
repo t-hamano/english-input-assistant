@@ -24,6 +24,7 @@ export function App() {
   const [translation, dispatch] = useReducer(translationReducer, initialTranslationState);
   const { view, originalText } = translation;
   const [playing, setPlaying] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingPlaying, setRecordingPlaying] = useState(false);
   const resultRef = useRef<TranslationResult | null>(null);
@@ -60,8 +61,9 @@ export function App() {
         resultRef.current = null;
         dispatch({ type: "preflight-error", message: e.payload });
       }),
-      getCurrentWindow().listen("tts-playing", () => setPlaying(true)),
+      getCurrentWindow().listen("tts-playing", () => { setPlaying(true); setAudioError(null); }),
       getCurrentWindow().listen("tts-done", () => setPlaying(false)),
+      getCurrentWindow().listen<string>("tts-error", (e) => setAudioError(e.payload)),
     ];
     return () => {
       unlisten.forEach((u) => u.then((f) => f()));
@@ -185,6 +187,7 @@ export function App() {
               <span role="status">Loading explanation...</span>
             ) : view.result.explanation}
           </div>
+          {audioError && <p className="error-msg" role="alert">{audioError}</p>}
           <div className="buttons">
             <div className="buttons-left">
               <button className="btn-primary" onClick={handleReplace}>

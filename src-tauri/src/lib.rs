@@ -23,7 +23,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-use config::{AppConfig, ConfigStore};
+use config::{ConfigStore, SettingsConfig};
 use llm::TranslationResult;
 use tts::{AudioCache, StopSignal};
 
@@ -94,7 +94,17 @@ fn emit_translation(app: &AppHandle, request_id: u64, result: &TranslationResult
 }
 
 fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
-    let (api_key, model, additional_prompt) = get_llm_config(app);
+    let (api_key, model, additional_prompt) = match get_llm_config(app) {
+        Ok(config) => config,
+        Err(message) => {
+            if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
+                let _ = app.emit("translation-error", serde_json::json!({
+                    "request_id": request_id, "message": message,
+                }));
+            }
+            return;
+        }
+    };
     if api_key.is_empty() {
         emit_translation(app, request_id, &TranslationResult {
             translated: format!("[Translated] {}", input),
@@ -115,9 +125,9 @@ fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
     }
 }
 
-fn get_llm_config(app: &AppHandle) -> (String, String, String) {
+fn get_llm_config(app: &AppHandle) -> Result<(String, String, String), String> {
     let config = app.state::<AppState>().config_store.get();
-    (config.api_key().to_string(), config.gemini_model, config.additional_prompt)
+    Ok((app.state::<AppState>().config_store.api_key()?, config.gemini_model, config.additional_prompt))
 }
 
 fn show_popup(app: &AppHandle, x: i32, y: i32) {
@@ -414,7 +424,12 @@ fn start_tts(app: &AppHandle, window_label: &str) {
 }
 
 #[tauri::command]
-fn play_tts(text: String, app: AppHandle) {
+async fn play_tts(text: String, app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || play_tts_inner(text, app))
+        .await.map_err(|_| "Could not start audio playback.".to_string())
+}
+
+fn play_tts_inner(text: String, app: AppHandle) {
     start_tts(&app, "main");
 
     let config = app.state::<AppState>().config_store.get();
@@ -440,7 +455,14 @@ fn play_tts(text: String, app: AppHandle) {
         return;
     }
 
-    let api_key = config.api_key().to_string();
+    let api_key = match app.state::<AppState>().config_store.api_key() {
+        Ok(key) => key,
+        Err(message) => {
+            let _ = app.emit_to("main", "tts-error", message);
+            emit_tts(&app, "tts-done");
+            return;
+        }
+    };
 
     if api_key.is_empty() {
         debug_log!("[rust] No API key set for TTS, skipping");
@@ -480,10 +502,22 @@ fn stop_tts(app: AppHandle) {
 }
 
 #[tauri::command]
-fn preview_tts(voice: String, speed: f64, app: AppHandle) {
+async fn preview_tts(voice: String, speed: f64, app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || preview_tts_inner(voice, speed, app))
+        .await.map_err(|_| "Could not start audio playback.".to_string())
+}
+
+fn preview_tts_inner(voice: String, speed: f64, app: AppHandle) {
     start_tts(&app, "settings");
 
-    let api_key = app.state::<AppState>().config_store.get().api_key().to_string();
+    let api_key = match app.state::<AppState>().config_store.api_key() {
+        Ok(key) => key,
+        Err(message) => {
+            let _ = app.emit_to("settings", "tts-error", message);
+            emit_tts(&app, "tts-done");
+            return;
+        }
+    };
     if api_key.is_empty() {
         emit_tts(&app, "tts-done");
         return;
@@ -531,12 +565,19 @@ fn get_tts_voices() -> Vec<tts::TtsVoice> {
 }
 
 #[tauri::command]
-fn get_config(app: AppHandle) -> AppConfig {
-    app.state::<AppState>().config_store.get()
+async fn get_config(app: AppHandle) -> Result<SettingsConfig, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().config_store.settings())
+        .await.map_err(|_| "Could not load settings.".to_string())?
 }
 
 #[tauri::command]
-fn save_config(config: AppConfig, app: AppHandle) -> Result<(), String> {
+async fn save_config(config: SettingsConfig, app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || save_settings(config, app))
+        .await.map_err(|_| "Could not save settings.".to_string())?
+}
+
+fn save_settings(settings: SettingsConfig, app: AppHandle) -> Result<(), String> {
+    let config = &settings.preferences;
     // Validate the new shortcut before doing anything else (empty = no shortcut)
     let new_shortcut = if config.shortcut.is_empty() {
         None
@@ -566,7 +607,7 @@ fn save_config(config: AppConfig, app: AppHandle) -> Result<(), String> {
         let _ = autostart.disable();
     }
 
-    app.state::<AppState>().config_store.update(config)
+    app.state::<AppState>().config_store.update(settings)
 }
 
 #[tauri::command]
