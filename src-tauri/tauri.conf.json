@@ -32,6 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg"]
+    "targets": ["nsis", "app", "dmg"],
+    "resources": ["icons/tray-icon-mac.png"]
   }
 }
