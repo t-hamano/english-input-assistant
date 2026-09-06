@@ -3,13 +3,20 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "version": "0.1.0",
+  "description": "A desktop app that turns selected Japanese or English text into natural English using Google Gemini.",
+  "author": "Aki Hamano",
+  "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/t-hamano/english-input-assistant.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "gen-icons": "node scripts/gen-icons.mjs"
+    "check-version": "node scripts/check-version.mjs",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -21,8 +28,6 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
-    "png-to-ico": "^3.0.2",
-    "sharp": "^0.35.4",
     "typescript": "~7.0.2",
     "vite": "^8.2.2"
   }

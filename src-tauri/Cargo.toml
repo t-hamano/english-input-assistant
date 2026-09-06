@@ -1,8 +1,10 @@
 [package]
 name = "english-input-assistant"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "A desktop app that turns selected Japanese or English text into natural English using Google Gemini."
+authors = ["Aki Hamano"]
+license = "GPL-2.0-or-later"
+repository = "https://github.com/t-hamano/english-input-assistant"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -36,4 +38,3 @@ winapi = { version = "0.3.9", features = ["winuser"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
-

@@ -5,5 +5,3 @@ dist
 *.local.json
 .vscode/*
 .DS_Store
-src-tauri/icons/Square*.png
-src-tauri/icons/StoreLogo.png

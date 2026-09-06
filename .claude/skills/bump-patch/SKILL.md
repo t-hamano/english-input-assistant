@@ -15,5 +15,5 @@ Bump the patch version of this application, keeping the major and minor versions
    - `package.json`: `version`.
    - `src-tauri/Cargo.toml`: `[package].version`.
    - `src-tauri/Cargo.lock`: `version` in the package named `english-input-assistant`.
-5. Verify that all application versions match and review the diff. Preserve dependency versions and unrelated changes; do not regenerate lockfiles just to change the application version. `pnpm-lock.yaml` does not store the application's version and needs no change for a version-only bump.
+5. Run `pnpm check-version` to verify that all application versions match and review the diff. Preserve dependency versions and unrelated changes; do not regenerate lockfiles just to change the application version. `pnpm-lock.yaml` does not store the application's version and needs no change for a version-only bump.
 6. Stage only the version changes and commit with the title `Bump version to <new-version>`. Do not create a tag or push unless the user requests it.
