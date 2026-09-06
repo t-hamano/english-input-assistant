@@ -1,18 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
-interface TranslationResult {
-  translated: string;
-  explanation: string;
-  source_is_english: boolean;
-}
-
-type ViewState =
-  | { type: "loading" }
-  | { type: "result"; result: TranslationResult }
-  | { type: "error"; message: string };
+import { initialTranslationState, translationReducer } from "./translation-state";
+import type { TranslationResult } from "./translation-state";
 
 const POPUP_WIDTH = 520;
 const MIN_HEIGHT = 300;
@@ -20,16 +12,17 @@ const MAX_HEIGHT = 600;
 
 async function resizeToContent() {
   await new Promise((r) => requestAnimationFrame(r));
+  const content = document.querySelector<HTMLElement>("#popup > .content");
   const height = Math.min(
-    Math.max(document.body.scrollHeight, MIN_HEIGHT),
+    Math.max(content?.scrollHeight ?? document.body.scrollHeight, MIN_HEIGHT),
     MAX_HEIGHT
   );
   await getCurrentWindow().setSize(new LogicalSize(POPUP_WIDTH, height));
 }
 
 export function App() {
-  const [view, setView] = useState<ViewState>({ type: "loading" });
-  const [originalText, setOriginalText] = useState("");
+  const [translation, dispatch] = useReducer(translationReducer, initialTranslationState);
+  const { view, originalText } = translation;
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingPlaying, setRecordingPlaying] = useState(false);
@@ -38,15 +31,13 @@ export function App() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  if (view.type === "result") {
-    resultRef.current = view.result;
-  }
+  resultRef.current = translation.requestId !== null && view.type === "result" ? view.result : null;
 
   useEffect(() => {
     const unlisten = [
-      listen<string>("show-loading", (e) => {
-        setOriginalText(e.payload || "");
-        setView({ type: "loading" });
+      listen<{ request_id: number; text: string }>("show-loading", (e) => {
+        resultRef.current = null;
+        dispatch({ type: "start", ...e.payload });
         setRecording(false);
         setRecordingPlaying(false);
         if (mediaRecorderRef.current?.state === "recording") {
@@ -59,11 +50,15 @@ export function App() {
         }
         recordedChunksRef.current = [];
       }),
-      listen<TranslationResult>("show-result", (e) => {
-        setView({ type: "result", result: e.payload });
+      listen<{ request_id: number; result: TranslationResult; complete: boolean }>("translation-update", (e) => {
+        dispatch({ type: "update", ...e.payload });
+      }),
+      listen<{ request_id: number; message: string }>("translation-error", (e) => {
+        dispatch({ type: "error", ...e.payload });
       }),
       listen<string>("show-error", (e) => {
-        setView({ type: "error", message: e.payload });
+        resultRef.current = null;
+        dispatch({ type: "preflight-error", message: e.payload });
       }),
       getCurrentWindow().listen("tts-playing", () => setPlaying(true)),
       getCurrentWindow().listen("tts-done", () => setPlaying(false)),
@@ -74,23 +69,31 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view.type !== "loading") {
-      resizeToContent();
-    }
-  }, [view]);
+    if (view.type === "loading") return;
+    const content = document.querySelector<HTMLElement>("#popup > .content");
+    if (!content) return;
+    // Re-measure after width/DPI changes reflow the text, not just after API events.
+    const observer = new ResizeObserver(() => { void resizeToContent(); });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [view.type]);
 
   const closePopup = useCallback(async () => {
     await getCurrentWindow().hide();
   }, []);
 
   const handleReplace = useCallback(async () => {
-    if (resultRef.current) {
-      await invoke("do_paste", { text: resultRef.current.translated });
-    }
+    const result = resultRef.current;
+    if (!result) return;
+    dispatch({ type: "dismiss" });
+    resultRef.current = null;
+    await invoke("do_paste", { text: result.translated });
     await closePopup();
   }, [closePopup]);
 
   const handleClose = useCallback(async () => {
+    dispatch({ type: "dismiss" });
+    resultRef.current = null;
     await invoke("restore_original_text");
     await closePopup();
   }, [closePopup]);
@@ -104,6 +107,8 @@ export function App() {
   }, [playing]);
 
   const handleRetry = useCallback(async () => {
+    dispatch({ type: "retry" });
+    resultRef.current = null;
     await invoke("retry_translation");
   }, []);
 
@@ -176,8 +181,18 @@ export function App() {
             <div className="translated-text">{view.result.translated}</div>
           </div>
           <div className="section">
-            <div className="section-title">{view.result.source_is_english ? "改善点・文法解説" : "文法解説"}</div>
-            <div className="explanation">{view.result.explanation}</div>
+            <div className="section-title" id="explanation-title">{view.result.source_is_english ? "改善点・文法解説" : "文法解説"}</div>
+            <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-labelledby="explanation-title" tabIndex={0}>
+              {view.error ? (
+                <div role="alert">
+                  <p className="error-msg">Could not load the explanation. You can still use the English text.</p>
+                  <details><summary>Error details</summary>{view.error}</details>
+                  <button onClick={handleRetry}>Retry translation</button>
+                </div>
+              ) : !view.complete ? (
+                <span role="status">Loading explanation...</span>
+              ) : view.result.explanation}
+            </div>
           </div>
           <div className="buttons">
             <div className="buttons-left">

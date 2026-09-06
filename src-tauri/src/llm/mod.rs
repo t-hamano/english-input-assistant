@@ -2,6 +2,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::OnceLock;
+mod stream;
 
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -20,7 +21,7 @@ fn http_client() -> Result<&'static Client, String> {
     Ok(HTTP_CLIENT.get_or_init(|| client))
 }
 
-const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説","source_is_english":bool}。explanation内で語句を引用する際は必ず日本語の「」を使用し、半角ダブルクォート(")で囲わないこと（JSONが壊れるため）。"#;
+const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"source_is_english":bool,"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説"}。出力順序は source_is_english、translated、explanation。英文を確定してから解説を生成すること。explanation内で語句を引用する際は必ず日本語の「」を使用し、半角ダブルクォート(")で囲わないこと（JSONが壊れるため）。"#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslationResult {
@@ -100,14 +101,21 @@ pub fn default_model() -> &'static str {
     ALLOWED_MODELS.iter().find(|m| m.is_default).map(|m| m.value).unwrap_or("gemini-2.5-flash")
 }
 
-pub fn translate(api_key: &str, model: &str, input: &str, additional_prompt: &str) -> Result<TranslationResult, String> {
+pub fn translate(
+    api_key: &str,
+    model: &str,
+    input: &str,
+    additional_prompt: &str,
+    on_translation: impl FnMut(TranslationResult),
+    is_current: impl Fn() -> bool,
+) -> Result<TranslationResult, String> {
     if !ALLOWED_MODELS.iter().any(|m| m.value == model) {
         return Err(format!("Invalid model: {}", model));
     }
 
     let client = http_client()?;
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
         model,
         api_key
     );
@@ -128,7 +136,8 @@ pub fn translate(api_key: &str, model: &str, input: &str, additional_prompt: &st
                 "description": "入力が英語であるかどうか"
             }
         },
-        "required": ["translated", "explanation", "source_is_english"]
+        "required": ["translated", "explanation", "source_is_english"],
+        "propertyOrdering": ["source_is_english", "translated", "explanation"]
     });
 
     let mut generation_config = json!({
@@ -168,10 +177,5 @@ pub fn translate(api_key: &str, model: &str, input: &str, additional_prompt: &st
         return Err(format!("Gemini API error {}: {}", status, text));
     }
 
-    let resp: serde_json::Value = response.json().map_err(|e| e.to_string())?;
-    let content = resp["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .ok_or("Missing content in Gemini response")?;
-
-    parse_response(content)
+    stream::read_response(std::io::BufReader::new(response), on_translation, is_current)
 }

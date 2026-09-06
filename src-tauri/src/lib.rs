@@ -13,6 +13,7 @@ macro_rules! debug_log {
 
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{thread, time::Duration};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -27,6 +28,7 @@ use tts::{AudioCache, StopSignal};
 
 /// State shared between shortcut handler and commands.
 struct AppState {
+    translation_id: AtomicU64,
     selected_text: Mutex<String>,
     /// Source window handle to restore focus after paste (Windows).
     #[cfg(target_os = "windows")]
@@ -42,21 +44,35 @@ struct AppState {
 
 /// Call LLM with automatic retry (up to 3 attempts).
 fn translate_with_retry(
+    app: &AppHandle,
+    request_id: u64,
     input: &str,
     api_key: &str,
     model: &str,
     additional_prompt: &str,
 ) -> Result<TranslationResult, String> {
     let max_retries = 3;
+    let mut displayed = false;
+    let is_current = || app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id;
 
     for attempt in 1..=max_retries {
-        match llm::translate(api_key, model, input, additional_prompt) {
+        if !is_current() {
+            return Err("Translation cancelled".to_string());
+        }
+        match llm::translate(api_key, model, input, additional_prompt, |result| {
+            displayed = true;
+            emit_translation(app, request_id, &result, false);
+        }, is_current) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 debug_log!(
                     "[rust] LLM attempt {}/{} failed: {}",
                     attempt, max_retries, e
                 );
+                // Do not replace an English sentence the user may already be using.
+                if displayed || !is_current() {
+                    return Err(e);
+                }
                 if attempt < max_retries {
                     thread::sleep(Duration::from_millis(500 * attempt as u64));
                 } else {
@@ -66,6 +82,36 @@ fn translate_with_retry(
         }
     }
     unreachable!()
+}
+
+fn emit_translation(app: &AppHandle, request_id: u64, result: &TranslationResult, complete: bool) {
+    if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
+        let _ = app.emit("translation-update", serde_json::json!({
+            "request_id": request_id, "result": result, "complete": complete,
+        }));
+    }
+}
+
+fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
+    let (api_key, model, additional_prompt) = get_llm_config(app);
+    if api_key.is_empty() {
+        emit_translation(app, request_id, &TranslationResult {
+            translated: format!("[Translated] {}", input),
+            explanation: "N/A (no API key set)".to_string(),
+            source_is_english: false,
+        }, true);
+        return;
+    }
+    match translate_with_retry(app, request_id, input, &api_key, &model, &additional_prompt) {
+        Ok(result) => emit_translation(app, request_id, &result, true),
+        Err(message) => {
+            if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
+                let _ = app.emit("translation-error", serde_json::json!({
+                    "request_id": request_id, "message": message,
+                }));
+            }
+        }
+    }
 }
 
 fn get_llm_config(app: &AppHandle) -> (String, String, String) {
@@ -97,14 +143,17 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
             let m_size = monitor.size();
             let screen_bottom = m_pos.y + m_size.height as i32;
             let screen_right = m_pos.x + m_size.width as i32;
+            // Cursor and monitor coordinates are physical; config sizes are logical.
+            let physical_width = (popup_width as f64 * monitor.scale_factor()).round() as i32;
+            let physical_height = (popup_height as f64 * monitor.scale_factor()).round() as i32;
 
-            let fx = if x + popup_width > screen_right {
-                x - popup_width
+            let fx = if x + physical_width > screen_right {
+                x - physical_width
             } else {
                 x
             };
-            let fy = if y + popup_height > screen_bottom {
-                y - popup_height
+            let fy = if y + physical_height > screen_bottom {
+                y - physical_height
             } else {
                 y + 20
             };
@@ -116,9 +165,9 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
         let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
             final_x, final_y,
         )));
-        let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-            popup_width as u32,
-            popup_height as u32,
+        let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            popup_width as f64,
+            popup_height as f64,
         )));
         let _ = win.set_always_on_top(true);
         let _ = win.set_focus();
@@ -128,6 +177,7 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
 
 fn on_shortcut(app: AppHandle) {
     debug_log!("[rust] shortcut triggered");
+    let request_id = app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst) + 1;
 
     let (cx, cy) = keyboard::get_cursor_position();
 
@@ -254,37 +304,17 @@ fn on_shortcut(app: AppHandle) {
     }
 
     // Show popup with loading state
-    let _ = app.emit("show-loading", &selected_text);
+    let _ = app.emit("show-loading", serde_json::json!({
+        "request_id": request_id, "text": selected_text,
+    }));
     show_popup(&app, cx, cy);
 
-    // Call LLM API
-    let (api_key, model, additional_prompt) = get_llm_config(&app);
-
-    if api_key.is_empty() {
-        let result = TranslationResult {
-            translated: format!("[Translated] {}", selected_text),
-            explanation: "N/A (no API key set)".to_string(),
-            source_is_english: false,
-        };
-        let _ = app.emit("show-result", &result);
-        return;
-    }
-
-    debug_log!("[rust] calling LLM...");
-    match translate_with_retry(&selected_text, &api_key, &model, &additional_prompt) {
-        Ok(result) => {
-            debug_log!("[rust] LLM result: {:?}", result);
-            let _ = app.emit("show-result", &result);
-        }
-        Err(e) => {
-            debug_log!("[rust] LLM error: {}", e);
-            let _ = app.emit("show-error", &e);
-        }
-    }
+    run_translation(&app, request_id, &selected_text);
 }
 
 #[tauri::command]
 fn restore_original_text(app: AppHandle) {
+    app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst);
     let text = app
         .state::<AppState>()
         .selected_text
@@ -298,6 +328,7 @@ fn restore_original_text(app: AppHandle) {
 
 #[tauri::command]
 fn do_paste(text: String, app: AppHandle) {
+    app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst);
     // Hide popup and restore focus to source window
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.hide();
@@ -352,18 +383,13 @@ fn retry_translation(app: AppHandle) {
         return;
     }
 
-    let _ = app.emit("show-loading", &selected_text);
+    let request_id = app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = app.emit("show-loading", serde_json::json!({
+        "request_id": request_id, "text": selected_text,
+    }));
 
     thread::spawn(move || {
-        let (api_key, model, additional_prompt) = get_llm_config(&app);
-        match translate_with_retry(&selected_text, &api_key, &model, &additional_prompt) {
-            Ok(result) => {
-                let _ = app.emit("show-result", &result);
-            }
-            Err(e) => {
-                let _ = app.emit("show-error", &e);
-            }
-        }
+        run_translation(&app, request_id, &selected_text);
     });
 }
 
@@ -595,6 +621,7 @@ pub fn run() {
             let config_store = ConfigStore::new(app_data_dir);
             let shortcut_str = config_store.get().shortcut;
             app.manage(AppState {
+                translation_id: AtomicU64::new(0),
                 selected_text: Mutex::new(String::new()),
                 #[cfg(target_os = "windows")]
                 source_hwnd: Mutex::new(0),
