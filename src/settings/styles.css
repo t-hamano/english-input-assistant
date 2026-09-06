@@ -52,3 +52,19 @@
   background: #fcf0f1;
   color: #d63638;
 }
+
+.updates-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.updates p {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.update-status {
+  color: #555;
+}

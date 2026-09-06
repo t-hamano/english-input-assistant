@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 interface AppConfig {
@@ -47,6 +48,11 @@ interface TtsVoice {
   is_default: boolean;
 }
 
+type UpdateOutcome = "up_to_date" | "cancelled" | "busy" | "development";
+type UpdateProgress =
+  | { event: "downloading"; received: number; total: number | null }
+  | { event: "installing" };
+
 export function App() {
   const [settings, setSettings] = useState<AppConfig | null>(null);
   const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
@@ -54,6 +60,10 @@ export function App() {
   const [playing, setPlaying] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState("");
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState("");
+  const [updateError, setUpdateError] = useState(false);
 
   const update = useCallback(
     <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
@@ -73,6 +83,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    void getVersion().then(setVersion).catch(console.error);
     Promise.all([
       invoke<GeminiModel[]>("get_gemini_models"),
       invoke<TtsVoice[]>("get_tts_voices"),
@@ -90,7 +101,39 @@ export function App() {
     if (!settings && !error) return;
     const height = Math.max(300, document.body.scrollHeight);
     void getCurrentWindow().setSize(new LogicalSize(400, height)).catch(console.error);
-  }, [settings, error]);
+  }, [settings, error, updateStatus]);
+
+  const handleCheckForUpdates = useCallback(async () => {
+    setCheckingUpdates(true);
+    setUpdateError(false);
+    setUpdateStatus("Checking for updates...");
+    const onProgress = new Channel<UpdateProgress>();
+    onProgress.onmessage = (progress) => {
+      if (progress.event === "installing") {
+        setUpdateStatus("Installing update. The app will restart...");
+      } else if (progress.total) {
+        const percent = Math.min(100, Math.round(progress.received / progress.total * 100));
+        setUpdateStatus(`Downloading update... ${percent}%`);
+      } else {
+        setUpdateStatus("Downloading update...");
+      }
+    };
+    try {
+      const result = await invoke<UpdateOutcome>("check_for_updates", { onProgress });
+      const messages: Record<UpdateOutcome, string> = {
+        up_to_date: "You are using the latest version.",
+        cancelled: "Update postponed. You can check again later.",
+        busy: "An update check is already in progress.",
+        development: "Updates are available in installed release builds only.",
+      };
+      setUpdateStatus(messages[result]);
+    } catch (e) {
+      setUpdateError(true);
+      setUpdateStatus(String(e));
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!settings) return;
@@ -256,6 +299,19 @@ export function App() {
           />
           Launch at startup
         </label>
+      </div>
+      <div className="field updates">
+        <div className="updates-heading">
+          <span>Version {version || "..."}</span>
+          <button type="button" onClick={handleCheckForUpdates} disabled={checkingUpdates}>
+            {checkingUpdates ? "Updating..." : "Check for updates"}
+          </button>
+        </div>
+        {updateStatus && (
+          <p className={updateError ? "error" : "update-status"} role={updateError ? "alert" : "status"}>
+            {updateStatus}
+          </p>
+        )}
       </div>
       {error && <div className="error">{error}</div>}
       <div className="buttons">

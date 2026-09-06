@@ -2,6 +2,7 @@ mod config;
 mod keyboard;
 mod llm;
 mod tts;
+mod updater;
 mod window_manager;
 
 macro_rules! debug_log {
@@ -587,6 +588,8 @@ fn open_settings(app: AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, _shortcut, event| {
@@ -615,6 +618,7 @@ pub fn run() {
             get_config,
             save_config,
             open_settings,
+            updater::check_for_updates,
         ])
         .setup(move |app| {
             // Initialize config store
@@ -632,6 +636,14 @@ pub fn run() {
                 config_store,
                 tts_stop: Mutex::new(None),
                 tts_window: Mutex::new(None),
+            });
+
+            // Check once per process, independently of the hidden popup or Settings.
+            let update_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = updater::check(update_app, None).await {
+                    eprintln!("[updater] {error}");
+                }
             });
 
             // System tray
