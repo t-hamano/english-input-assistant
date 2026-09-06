@@ -579,6 +579,7 @@ fn open_settings(app: AppHandle) {
     let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("src/settings.html".into()))
         .title("Settings — English Input Assistant")
         .inner_size(400.0, 300.0)
+        .min_inner_size(400.0, 300.0)
         .resizable(false)
         .build();
 }

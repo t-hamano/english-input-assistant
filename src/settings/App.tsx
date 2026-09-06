@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
@@ -47,12 +47,6 @@ interface TtsVoice {
   is_default: boolean;
 }
 
-async function resizeToContent() {
-  await new Promise((r) => requestAnimationFrame(r));
-  const height = document.body.scrollHeight;
-  await getCurrentWindow().setSize(new LogicalSize(400, height));
-}
-
 export function App() {
   const [settings, setSettings] = useState<AppConfig | null>(null);
   const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
@@ -87,12 +81,16 @@ export function App() {
       setGeminiModels(models);
       setTtsVoices(voices);
       setSettings(config);
+    }).catch((e) => {
+      setError(String(e));
     });
   }, []);
 
-  useEffect(() => {
-    resizeToContent();
-  });
+  useLayoutEffect(() => {
+    if (!settings && !error) return;
+    const height = Math.max(300, document.body.scrollHeight);
+    void getCurrentWindow().setSize(new LogicalSize(400, height)).catch(console.error);
+  }, [settings, error]);
 
   const handleSave = useCallback(async () => {
     if (!settings) return;
@@ -137,7 +135,13 @@ export function App() {
     await getCurrentWindow().close();
   }, []);
 
-  if (!settings) return null;
+  if (!settings) {
+    return (
+      <div className="content">
+        {error ? <div className="error" role="alert">{error}</div> : <p>Loading settings...</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="content">
