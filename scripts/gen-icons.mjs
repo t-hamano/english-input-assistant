@@ -1,6 +1,6 @@
 /**
  * Generates icons for macOS and Windows from app-icon.svg.
- * Run with: npm run gen-icons
+ * Run with: pnpm gen-icons
  *
  * Outputs:
  *   icon.png           - 512×512 app icon (macOS / general)
