@@ -65,13 +65,19 @@ body,
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   padding: 32px 16px 16px;
 }
 
-.original-text {
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ddd;
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-title {
+  font-weight: 600;
+  color: #888;
 }
 
 .explanation {

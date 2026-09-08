@@ -174,18 +174,27 @@ export function App() {
       )}
       {view.type === "result" && (
         <div className="content">
-          <div className="original-text">{originalText}</div>
-          <div className="translated-text">{view.result.translated}</div>
-          <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-label={view.result.source_is_english ? "改善点・文法解説" : "文法解説"} tabIndex={0}>
-            {view.error ? (
-              <div role="alert">
-                <p className="error-msg">解説を読み込めませんでした。英文はそのまま使用できます。</p>
-                <details><summary>エラー詳細</summary>{view.error}</details>
-                <button onClick={handleRetry}>翻訳を再試行</button>
-              </div>
-            ) : !view.complete ? (
-              <span role="status">解説を読み込み中...</span>
-            ) : view.result.explanation}
+          <div className="section">
+            <div className="section-title">原文</div>
+            <div className="original-text">{originalText}</div>
+          </div>
+          <div className="section">
+            <div className="section-title">推奨英文</div>
+            <div className="translated-text">{view.result.translated}</div>
+          </div>
+          <div className="section">
+            <div className="section-title">{view.result.source_is_english ? "改善点・文法解説" : "文法解説"}</div>
+            <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-label={view.result.source_is_english ? "改善点・文法解説" : "文法解説"} tabIndex={0}>
+              {view.error ? (
+                <div role="alert">
+                  <p className="error-msg">解説を読み込めませんでした。英文はそのまま使用できます。</p>
+                  <details><summary>エラー詳細</summary>{view.error}</details>
+                  <button onClick={handleRetry}>翻訳を再試行</button>
+                </div>
+              ) : !view.complete ? (
+                <span role="status">解説を読み込み中...</span>
+              ) : view.result.explanation}
+            </div>
           </div>
           {audioError && <p className="error-msg" role="alert">{audioError}</p>}
           <div className="buttons">
