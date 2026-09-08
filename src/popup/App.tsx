@@ -29,27 +29,42 @@ export function App() {
   const [recordingPlaying, setRecordingPlaying] = useState(false);
   const resultRef = useRef<TranslationResult | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingRequestRef = useRef(0);
+  const recordingPendingRef = useRef(false);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
 
   resultRef.current = translation.requestId !== null && view.type === "result" ? view.result : null;
+
+  const resetRecording = useCallback(() => {
+    // Invalidate pending microphone requests and queued recorder events.
+    recordingRequestRef.current += 1;
+    recordingPendingRef.current = false;
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      try {
+        if (recorder.state !== "inactive") recorder.stop();
+      } finally {
+        recorder.stream.getTracks().forEach((track) => track.stop());
+      }
+    }
+    if (recordedAudioRef.current) {
+      recordedAudioRef.current.pause();
+      URL.revokeObjectURL(recordedAudioRef.current.src);
+      recordedAudioRef.current = null;
+    }
+    setRecording(false);
+    setRecordingPlaying(false);
+  }, []);
 
   useEffect(() => {
     const unlisten = [
       listen<{ request_id: number; text: string }>("show-loading", (e) => {
         resultRef.current = null;
         dispatch({ type: "start", ...e.payload });
-        setRecording(false);
-        setRecordingPlaying(false);
-        if (mediaRecorderRef.current?.state === "recording") {
-          mediaRecorderRef.current.stop();
-        }
-        if (recordedAudioRef.current) {
-          recordedAudioRef.current.pause();
-          URL.revokeObjectURL(recordedAudioRef.current.src);
-          recordedAudioRef.current = null;
-        }
-        recordedChunksRef.current = [];
+        resetRecording();
       }),
       listen<{ request_id: number; result: TranslationResult; complete: boolean }>("translation-update", (e) => {
         dispatch({ type: "update", ...e.payload });
@@ -58,6 +73,7 @@ export function App() {
         dispatch({ type: "error", ...e.payload });
       }),
       listen<string>("show-error", (e) => {
+        resetRecording();
         resultRef.current = null;
         dispatch({ type: "preflight-error", message: e.payload });
       }),
@@ -66,9 +82,10 @@ export function App() {
       getCurrentWindow().listen<string>("tts-error", (e) => setAudioError(e.payload)),
     ];
     return () => {
+      resetRecording();
       unlisten.forEach((u) => u.then((f) => f()));
     };
-  }, []);
+  }, [resetRecording]);
 
   useEffect(() => {
     if (view.type === "loading") return;
@@ -87,18 +104,20 @@ export function App() {
   const handleReplace = useCallback(async () => {
     const result = resultRef.current;
     if (!result) return;
+    resetRecording();
     dispatch({ type: "dismiss" });
     resultRef.current = null;
     await invoke("do_paste", { text: result.translated });
     await closePopup();
-  }, [closePopup]);
+  }, [closePopup, resetRecording]);
 
   const handleClose = useCallback(async () => {
+    resetRecording();
     dispatch({ type: "dismiss" });
     resultRef.current = null;
     await invoke("restore_original_text");
     await closePopup();
-  }, [closePopup]);
+  }, [closePopup, resetRecording]);
 
   const handlePlay = useCallback(async () => {
     if (playing) {
@@ -109,27 +128,43 @@ export function App() {
   }, [playing]);
 
   const handleRetry = useCallback(async () => {
+    resetRecording();
     dispatch({ type: "retry" });
     resultRef.current = null;
     await invoke("retry_translation");
-  }, []);
+  }, [resetRecording]);
 
   const handleRecord = useCallback(async () => {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
+    const activeRecorder = mediaRecorderRef.current;
+    if (activeRecorder) {
+      try {
+        if (activeRecorder.state !== "inactive") activeRecorder.stop();
+      } finally {
+        activeRecorder.stream.getTracks().forEach((track) => track.stop());
+      }
       return;
     }
-    recordedChunksRef.current = [];
+    if (recordingPendingRef.current) return;
+    recordingPendingRef.current = true;
+    const requestId = ++recordingRequestRef.current;
+    let stream: MediaStream | undefined;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (requestId !== recordingRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+        if (requestId === recordingRequestRef.current && e.data.size > 0) chunks.push(e.data);
       };
       recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        recorder.stream.getTracks().forEach((track) => track.stop());
+        if (requestId !== recordingRequestRef.current) return;
+        mediaRecorderRef.current = null;
+        const blob = new Blob(chunks, { type: recorder.mimeType });
         const url = URL.createObjectURL(blob);
         if (recordedAudioRef.current) {
           URL.revokeObjectURL(recordedAudioRef.current.src);
@@ -142,9 +177,13 @@ export function App() {
       setRecording(true);
       resizeToContent();
     } catch {
-      // Microphone access denied or unavailable
+      // Release an acquired microphone even if recorder construction/start fails.
+      stream?.getTracks().forEach((track) => track.stop());
+      if (requestId === recordingRequestRef.current) resetRecording();
+    } finally {
+      if (requestId === recordingRequestRef.current) recordingPendingRef.current = false;
     }
-  }, [recording]);
+  }, [resetRecording]);
 
   const handlePlayRecording = useCallback(() => {
     if (recordingPlaying) {
