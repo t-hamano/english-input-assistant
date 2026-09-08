@@ -104,10 +104,15 @@ export function App() {
   const handleReplace = useCallback(async () => {
     const result = resultRef.current;
     if (!result) return;
+    try {
+      await invoke("do_paste", { text: result.translated });
+    } catch {
+      // Paste target unconfirmed; backend re-showed the popup. Keep it open.
+      return;
+    }
     resetRecording();
     dispatch({ type: "dismiss" });
     resultRef.current = null;
-    await invoke("do_paste", { text: result.translated });
     await closePopup();
   }, [closePopup, resetRecording]);
 

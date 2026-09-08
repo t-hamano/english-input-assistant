@@ -4,16 +4,21 @@
 #[cfg(target_os = "windows")]
 mod imp {
     use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{GetForegroundWindow, SetForegroundWindow};
+    use winapi::um::winuser::{GetForegroundWindow, IsWindow, SetForegroundWindow};
 
-    pub fn get_foreground_window() -> HWND {
-        unsafe { GetForegroundWindow() }
+    /// Foreground window handle as a raw `usize` (`0` = none).
+    pub fn get_foreground_window() -> usize {
+        unsafe { GetForegroundWindow() as usize }
     }
 
-    pub fn set_foreground_window(hwnd: HWND) {
-        unsafe {
-            SetForegroundWindow(hwnd);
-        }
+    /// Request activation of `hwnd`; returns whether the OS accepted it.
+    pub fn set_foreground_window(hwnd: usize) -> bool {
+        unsafe { SetForegroundWindow(hwnd as HWND) != 0 }
+    }
+
+    /// Whether `hwnd` still refers to an existing window.
+    pub fn is_window(hwnd: usize) -> bool {
+        hwnd != 0 && unsafe { IsWindow(hwnd as HWND) != 0 }
     }
 }
 

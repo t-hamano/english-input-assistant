@@ -185,18 +185,56 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
     }
 }
 
+/// Re-focus the captured source window and confirm the OS honored it. `false`
+/// means the caller must not synthesize Ctrl+X / Ctrl+V — they would hit an
+/// unrelated window.
+#[cfg(target_os = "windows")]
+fn restore_source_focus(app: &AppHandle) -> bool {
+    let source_hwnd = *app.state::<AppState>().source_hwnd.lock().unwrap();
+    if source_hwnd == 0 {
+        return false;
+    }
+    for attempt in 0..3 {
+        if !window_manager::is_window(source_hwnd) {
+            return false;
+        }
+        window_manager::set_foreground_window(source_hwnd);
+        thread::sleep(Duration::from_millis(if attempt == 0 { 150 } else { 100 }));
+        if window_manager::get_foreground_window() == source_hwnd {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn restore_source_focus(app: &AppHandle) -> bool {
+    let source_pid = *app.state::<AppState>().source_pid.lock().unwrap();
+    if source_pid == 0 {
+        return false;
+    }
+    window_manager::set_foreground_pid(source_pid);
+    thread::sleep(Duration::from_millis(150));
+    // 0 = could not read (osascript hiccup); only a confirmed mismatch is failure.
+    let fg = window_manager::get_foreground_pid();
+    fg == 0 || fg == source_pid
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn restore_source_focus(_app: &AppHandle) -> bool {
+    true // no source tracking on this platform
+}
+
 fn on_shortcut(app: AppHandle) {
     debug_log!("[rust] shortcut triggered");
     let request_id = app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst) + 1;
 
     let (cx, cy) = keyboard::get_cursor_position();
 
-    // --- Windows: track source window (HWND) ---
+    // Windows: capture the source window, unless the foreground is one of ours.
     #[cfg(target_os = "windows")]
-    let source_hwnd: usize = {
+    {
         let fg_hwnd = window_manager::get_foreground_window();
-
-        // Collect HWNDs of all our own windows
         let own_hwnds: Vec<usize> = ["main", "settings"]
             .iter()
             .filter_map(|label| {
@@ -206,59 +244,44 @@ fn on_shortcut(app: AppHandle) {
             })
             .collect();
 
-        if own_hwnds.contains(&(fg_hwnd as usize)) {
-            // Foreground is one of our windows — use previously stored source window
-            app.try_state::<AppState>()
-                .map(|s| *s.source_hwnd.lock().unwrap())
-                .unwrap_or(0)
-        } else {
-            // Store this as the source window
-            let hwnd = fg_hwnd as usize;
+        if !own_hwnds.contains(&fg_hwnd) {
             if let Some(state) = app.try_state::<AppState>() {
-                *state.source_hwnd.lock().unwrap() = hwnd;
+                *state.source_hwnd.lock().unwrap() = fg_hwnd;
             }
-            hwnd
         }
-    };
+    }
 
-    // --- macOS: track source application (PID) ---
+    // macOS: capture the source app, unless our own process is frontmost.
     #[cfg(target_os = "macos")]
-    let source_pid: i32 = {
+    {
         let fg_pid = window_manager::get_foreground_pid();
         let own_pid = window_manager::own_pid();
 
-        if fg_pid == own_pid {
-            // Our popup is frontmost — use previously stored source pid
-            app.try_state::<AppState>()
-                .map(|s| *s.source_pid.lock().unwrap())
-                .unwrap_or(0)
-        } else {
-            // Store this as the source application
+        if fg_pid != own_pid {
             if let Some(state) = app.try_state::<AppState>() {
                 *state.source_pid.lock().unwrap() = fg_pid;
             }
-            fg_pid
         }
-    };
+    }
 
-    // Hide popup and restore focus to source window
+    // Hide the popup, wait for the shortcut keys to be released.
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.hide();
     }
-    #[cfg(target_os = "windows")]
-    if source_hwnd != 0 {
-        window_manager::set_foreground_window(source_hwnd as *mut _);
-    }
-    #[cfg(target_os = "macos")]
-    if source_pid != 0 {
-        window_manager::set_foreground_pid(source_pid);
-    }
-    thread::sleep(Duration::from_millis(150));
-
-    // Wait for user to release shortcut keys
     thread::sleep(Duration::from_millis(300));
     keyboard::release_modifiers();
     thread::sleep(Duration::from_millis(50));
+
+    // Confirm the source window is focused before synthesizing Ctrl+X.
+    if !restore_source_focus(&app) {
+        debug_log!("[rust] on_shortcut: source focus unconfirmed, aborting capture");
+        let _ = app.emit(
+            "show-error",
+            "元のウィンドウにフォーカスを戻せませんでした。もう一度お試しください。",
+        );
+        show_popup(&app, cx, cy);
+        return;
+    }
 
     // Clear clipboard before cut so we can detect if anything was actually selected
     if let Ok(mut cb) = arboard::Clipboard::new() {
@@ -331,35 +354,55 @@ fn restore_original_text(app: AppHandle) {
         .lock()
         .unwrap()
         .clone();
-    if !text.is_empty() {
-        do_paste(text, app);
+    if text.is_empty() {
+        return;
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+    // Only type it back if the source window is confirmed focused; otherwise
+    // just leave it on the clipboard.
+    if restore_source_focus(&app) {
+        paste_text(&text);
+    } else {
+        debug_log!("[rust] restore_original_text: source focus unconfirmed, not pasting");
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            let _ = cb.set_text(&text);
+        }
     }
 }
 
 #[tauri::command]
-fn do_paste(text: String, app: AppHandle) {
+fn do_paste(text: String, app: AppHandle) -> Result<(), String> {
     app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst);
-    // Hide popup and restore focus to source window
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.hide();
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        let source_hwnd = *app.state::<AppState>().source_hwnd.lock().unwrap();
-        if source_hwnd != 0 {
-            window_manager::set_foreground_window(source_hwnd as *mut _);
+    if !restore_source_focus(&app) {
+        debug_log!("[rust] do_paste: source focus unconfirmed, not pasting");
+        // Leave the translation on the clipboard and re-show the popup.
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            let _ = cb.set_text(&text);
         }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let source_pid = *app.state::<AppState>().source_pid.lock().unwrap();
-        if source_pid != 0 {
-            window_manager::set_foreground_pid(source_pid);
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.show();
+            let _ = win.set_focus();
         }
+        let _ = app.emit(
+            "show-error",
+            "元のウィンドウにフォーカスを戻せませんでした。翻訳結果をクリップボードにコピーしたので、貼り付け先を確認して手動で貼り付けてください。",
+        );
+        return Err("focus-unconfirmed".to_string());
     }
-    thread::sleep(Duration::from_millis(150));
 
+    paste_text(&text);
+    Ok(())
+}
+
+/// Put `text` on the clipboard and synthesize a paste. Caller must confirm the
+/// target window is focused first.
+fn paste_text(text: &str) {
     let mut clipboard = match arboard::Clipboard::new() {
         Ok(c) => c,
         Err(_e) => {
@@ -367,7 +410,7 @@ fn do_paste(text: String, app: AppHandle) {
             return;
         }
     };
-    if let Err(_e) = clipboard.set_text(&text) {
+    if let Err(_e) = clipboard.set_text(text) {
         debug_log!("[rust] clipboard write error: {}", _e);
         return;
     }
