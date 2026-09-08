@@ -30,7 +30,14 @@ fn default_tts_speed() -> f64 {
 }
 
 pub fn default_shortcut() -> String {
-    String::new()
+    #[cfg(target_os = "macos")]
+    {
+        "Ctrl+Shift+Space".to_string()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Ctrl+Alt+Space".to_string()
+    }
 }
 
 impl Default for AppConfig {
