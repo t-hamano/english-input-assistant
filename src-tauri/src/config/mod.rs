@@ -7,6 +7,8 @@ use std::sync::Mutex;
 pub struct AppConfig {
     pub additional_prompt: String,
     pub auto_start: bool,
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
     #[serde(default = "default_tts_voice")]
@@ -29,6 +31,10 @@ fn default_tts_speed() -> f64 {
     1.0
 }
 
+fn default_auto_check_updates() -> bool {
+    true
+}
+
 pub fn default_shortcut() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -45,6 +51,7 @@ impl Default for AppConfig {
         Self {
             additional_prompt: String::new(),
             auto_start: false,
+            auto_check_updates: default_auto_check_updates(),
             gemini_model: default_gemini_model(),
             tts_voice: default_tts_voice(),
             tts_speed: default_tts_speed(),

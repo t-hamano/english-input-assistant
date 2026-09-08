@@ -667,6 +667,7 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
             let config_store = ConfigStore::new(app_data_dir);
             let shortcut_str = config_store.get().shortcut;
+            let auto_check_updates = config_store.get().auto_check_updates;
             app.manage(AppState {
                 translation_id: AtomicU64::new(0),
                 selected_text: Mutex::new(String::new()),
@@ -681,12 +682,14 @@ pub fn run() {
             });
 
             // Check once per process, independently of the hidden popup or Settings.
-            let update_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = updater::check(update_app, None).await {
-                    eprintln!("[updater] {error}");
-                }
-            });
+            if auto_check_updates {
+                let update_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = updater::check(update_app, None).await {
+                        eprintln!("[updater] {error}");
+                    }
+                });
+            }
 
             // System tray
             let settings_item = MenuItemBuilder::with_id("settings", "設定").build(app)?;

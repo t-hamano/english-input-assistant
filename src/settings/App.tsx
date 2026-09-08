@@ -7,6 +7,7 @@ interface AppConfig {
   google_api_key: string;
   additional_prompt: string;
   auto_start: boolean;
+  auto_check_updates: boolean;
   gemini_model: string;
   tts_voice: string;
   tts_speed: number;
@@ -311,6 +312,16 @@ export function App() {
             onChange={(e) => update("auto_start", e.target.checked)}
           />
           起動時に自動実行
+        </label>
+      </div>
+      <div className="field checkbox-field">
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.auto_check_updates}
+            onChange={(e) => update("auto_check_updates", e.target.checked)}
+          />
+          起動時にアップデートを確認
         </label>
       </div>
       <div className="field updates">
