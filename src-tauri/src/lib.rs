@@ -94,35 +94,33 @@ fn emit_translation(app: &AppHandle, request_id: u64, result: &TranslationResult
     }
 }
 
+fn emit_translation_error(app: &AppHandle, request_id: u64, message: impl Into<String>) {
+    if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
+        let _ = app.emit("translation-error", serde_json::json!({
+            "request_id": request_id, "message": message.into(),
+        }));
+    }
+}
+
 fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
     let (api_key, model, additional_prompt) = match get_llm_config(app) {
         Ok(config) => config,
         Err(message) => {
-            if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
-                let _ = app.emit("translation-error", serde_json::json!({
-                    "request_id": request_id, "message": message,
-                }));
-            }
+            emit_translation_error(app, request_id, message);
             return;
         }
     };
     if api_key.is_empty() {
-        emit_translation(app, request_id, &TranslationResult {
-            translated: format!("[翻訳] {}", input),
-            explanation: "N/A（API キー未設定）".to_string(),
-            source_is_english: false,
-        }, true);
+        emit_translation_error(
+            app,
+            request_id,
+            "API キーが設定されていません。設定画面で Google API キーを登録してください。",
+        );
         return;
     }
     match translate_with_retry(app, request_id, input, &api_key, &model, &additional_prompt) {
         Ok(result) => emit_translation(app, request_id, &result, true),
-        Err(message) => {
-            if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
-                let _ = app.emit("translation-error", serde_json::json!({
-                    "request_id": request_id, "message": message,
-                }));
-            }
-        }
+        Err(message) => emit_translation_error(app, request_id, message),
     }
 }
 
