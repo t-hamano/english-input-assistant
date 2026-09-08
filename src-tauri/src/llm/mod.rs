@@ -94,12 +94,12 @@ pub struct GeminiModel {
 }
 
 pub const ALLOWED_MODELS: &[GeminiModel] = &[
-    GeminiModel { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", is_default: false },
-    GeminiModel { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", is_default: true },
+    GeminiModel { value: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite", is_default: false },
+    GeminiModel { value: "gemini-3.8-flash", label: "Gemini 3.8 Flash", is_default: true },
 ];
 
 pub fn default_model() -> &'static str {
-    ALLOWED_MODELS.iter().find(|m| m.is_default).map(|m| m.value).unwrap_or("gemini-2.5-flash")
+    ALLOWED_MODELS.iter().find(|m| m.is_default).map(|m| m.value).unwrap_or("gemini-3.8-flash")
 }
 
 pub fn translate(
@@ -140,16 +140,13 @@ pub fn translate(
         "propertyOrdering": ["source_is_english", "translated", "explanation"]
     });
 
-    let mut generation_config = json!({
+    // Keep latency low. Gemini 3.x cannot disable thinking entirely, only lower it.
+    let generation_config = json!({
         "temperature": 0,
         "responseMimeType": "application/json",
-        "responseSchema": response_schema
+        "responseSchema": response_schema,
+        "thinkingConfig": { "thinkingLevel": "low" }
     });
-
-    // thinkingConfig is only supported by Gemini 2.5 models
-    if model.starts_with("gemini-2.5") {
-        generation_config["thinkingConfig"] = json!({ "thinkingBudget": 0 });
-    }
 
     let body = json!({
         "systemInstruction": {

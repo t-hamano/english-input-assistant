@@ -524,7 +524,7 @@ fn preview_tts_inner(voice: String, speed: f64, app: AppHandle) {
         return;
     }
 
-    let text = "The quick brown fox jumps over the lazy dog.".to_string();
+    let text = "The quick brown fox jumps over the lazy dog. A gentle breeze drifted through the open window as the afternoon light slowly faded away.".to_string();
     let cache_key = format!("{}|{}|{}", text, voice, speed);
 
     let cached = app.state::<AppState>().audio_cache.get(&cache_key);

@@ -36,16 +36,24 @@ pub struct TtsVoice {
 }
 
 pub const ALLOWED_VOICES: &[TtsVoice] = &[
-    TtsVoice { value: "en-US-Standard-A", label: "Standard-A (Male)", is_default: true },
-    TtsVoice { value: "en-US-Standard-B", label: "Standard-B (Male)", is_default: false },
-    TtsVoice { value: "en-US-Standard-C", label: "Standard-C (Female)", is_default: false },
-    TtsVoice { value: "en-US-Standard-D", label: "Standard-D (Male)", is_default: false },
-    TtsVoice { value: "en-US-Standard-E", label: "Standard-E (Female)", is_default: false },
-    TtsVoice { value: "en-US-Standard-F", label: "Standard-F (Female)", is_default: false },
-    TtsVoice { value: "en-US-Standard-G", label: "Standard-G (Female)", is_default: false },
-    TtsVoice { value: "en-US-Standard-H", label: "Standard-H (Female)", is_default: false },
-    TtsVoice { value: "en-US-Standard-I", label: "Standard-I (Male)", is_default: false },
-    TtsVoice { value: "en-US-Standard-J", label: "Standard-J (Male)", is_default: false },
+    TtsVoice { value: "en-US-Standard-A", label: "Standard-A（男性）", is_default: true },
+    TtsVoice { value: "en-US-Standard-B", label: "Standard-B（男性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-C", label: "Standard-C（女性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-D", label: "Standard-D（男性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-E", label: "Standard-E（女性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-F", label: "Standard-F（女性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-G", label: "Standard-G（女性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-H", label: "Standard-H（女性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-I", label: "Standard-I（男性）", is_default: false },
+    TtsVoice { value: "en-US-Standard-J", label: "Standard-J（男性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Aoede", label: "Chirp 3 HD Aoede（女性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Kore", label: "Chirp 3 HD Kore（女性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Leda", label: "Chirp 3 HD Leda（女性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Zephyr", label: "Chirp 3 HD Zephyr（女性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Charon", label: "Chirp 3 HD Charon（男性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Fenrir", label: "Chirp 3 HD Fenrir（男性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Orus", label: "Chirp 3 HD Orus（男性）", is_default: false },
+    TtsVoice { value: "en-US-Chirp3-HD-Puck", label: "Chirp 3 HD Puck（男性）", is_default: false },
 ];
 
 pub fn default_voice() -> &'static str {

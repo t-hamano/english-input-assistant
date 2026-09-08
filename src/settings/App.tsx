@@ -242,13 +242,16 @@ export function App() {
             </option>
           ))}
         </select>
+        <small>
+          Flash は解説の精度が高いが低速、Flash-Lite は低コスト・高速で短文向けです。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="additional-prompt">追加プロンプト</label>
         <textarea
           id="additional-prompt"
           rows={3}
-          placeholder="例: カジュアルな口調で"
+          placeholder="例: ビジネスメール向けにフォーマルな表現で。1文は簡潔に、専門用語はそのまま残す。"
           value={settings.additional_prompt}
           onChange={(e) => update("additional_prompt", e.target.value)}
         />
@@ -282,6 +285,9 @@ export function App() {
             </svg>
           </button>
         </div>
+        <small>
+          Standard は低コストで無料枠が大きめ、Chirp 3 HD はより自然で高品質ですが単価が高く無料枠は小さめです。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="tts-speed">音声速度 ({settings.tts_speed.toFixed(1)}x)</label>

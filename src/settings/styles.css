@@ -7,10 +7,20 @@
   padding: 16px;
 }
 
+small {
+  font-size: 12px;
+  margin-top: 5px;
+  display: block;
+}
+
 .voice,
 .shortcut {
   display: flex;
   gap: 8px;
+}
+
+#tts-speed {
+  width: 50%;
 }
 
 .voice select,

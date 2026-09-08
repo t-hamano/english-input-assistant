@@ -24,18 +24,20 @@
 
 ## 使い方
 
-- 起動するとタスクトレイ（macOS はメニューバー）に常駐します。設
+- 起動するとタスクトレイ（macOS はメニューバー）に常駐します。設定画面と終了はそのアイコンから開きます。
 - 初回はアプリの設定画面で [API キー](#api-キー)を登録してください。
 - テキストを選択してキーボードショートカットを押すと変換が実行されます。デフォルトは Windows が <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>、macOS が <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> で、設定画面から変更できます。
 - 変換結果のポップアップで「置き換え」を押すと、選択していた範囲が英文に差し替わります。置き換えずに閉じると元のテキストが復元されます。
-- 提案された英文を読み上げる音声が 10 種類用意されています。英文読み上げの練習のために、自分の声を録音して聞き返すこともできます。
+- 提案された英文を読み上げる音声が 18 種類用意されています（低コストの Standard 10 種と、高品質な Chirp 3: HD 8 種）。英文読み上げの練習のために、自分の声を録音して聞き返すこともできます。
 
 ## API キー
 
 このアプリは翻訳に Google Gemini、音声読み上げに Google Cloud Text-to-Speech を利用します。どちらも Google の API キー 1 つで動作します。
 
 > [!IMPORTANT]
-> API の利用量に応じて Google から課金される場合があります。無料枠（Gemini API の無料枠、Text-to-Speech Standard 音声の月 400 万文字など）を超えると料金が発生します。Google Cloud Console で予算アラートや割り当て上限を設定し、利用量を定期的に確認してください。想定外の課金について作者は責任を負いません。
+> API の利用量に応じて Google から課金される場合があります。各サービスの無料枠を超えると料金が発生します。Google Cloud Console で予算アラートや割り当て上限を設定し、利用量を定期的に確認してください。想定外の課金について作者は責任を負いません。
+>
+> 料金の詳細: [Gemini API の料金](https://ai.google.dev/gemini-api/docs/pricing?hl=ja) / [Text-to-Speech の料金](https://cloud.google.com/text-to-speech/pricing?hl=ja)
 
 1. [Google AI Studio](https://aistudio.google.com/apikey) で API キーを発行します。
 2. アプリの設定画面を開き、「Google API キー」欄に貼り付けて保存します。
@@ -48,7 +50,7 @@
 
 1. [Google Cloud Console](https://console.cloud.google.com) で、API キーに紐づくプロジェクトを開きます（AI Studio でキー発行時に新規作成した場合はそのプロジェクト）。
 2. 「Cloud Text-to-Speech API」を有効化します。
-3. プロジェクトで課金を有効化します（Standard 音声は月 400 万文字まで無料枠）。
+3. プロジェクトで課金を有効化します（無料枠の範囲・単価は料金ページを参照）。
 4. API キーに制限を設定している場合は、Cloud Text-to-Speech API を許可リストに追加します。
 
 有効化せずに読み上げを実行すると `Google TTS API エラー: HTTP 403` が表示されます。翻訳のみ利用する場合はこの手順は不要です。
