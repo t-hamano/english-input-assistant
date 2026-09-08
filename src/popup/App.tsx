@@ -162,8 +162,12 @@ export function App() {
 
   return (
     <div id="popup">
-      <div className="drag-handle" data-tauri-drag-region />
-      <button className="btn-close" title="閉じる" onClick={handleClose}>
+      <div className="drag-handle" data-tauri-drag-region>
+        <span className="popup-title">
+          English Input Assistant{view.type === "result" ? "：翻訳結果" : view.type === "error" ? "：エラー" : "：翻訳中"}
+        </span>
+      </div>
+      <button className="popup-close" title="閉じる" onClick={handleClose}>
         &#x2715;
       </button>
       {view.type === "loading" && (
