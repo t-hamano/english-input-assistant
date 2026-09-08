@@ -54,17 +54,17 @@ pub fn default_voice() -> &'static str {
 
 pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<Vec<u8>, String> {
     if !ALLOWED_VOICES.iter().any(|v| v.value == voice) {
-        return Err(format!("Invalid voice: {}", voice));
+        return Err(format!("無効な音声: {}", voice));
     }
     if !(0.5..=2.0).contains(&speed) {
-        return Err(format!("Invalid speed: {}. Must be between 0.5 and 2.0", speed));
+        return Err(format!("無効な速度: {}。0.5〜2.0 の範囲で指定してください", speed));
     }
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+        .map_err(|e| format!("HTTP クライアントエラー: {}", e))?;
     let url = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
     // Extract language code: "en-US-Standard-C" -> "en-US"
@@ -92,19 +92,19 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
 
     if !response.status().is_success() {
         let status = response.status();
-        return Err(format!("Google TTS API error: HTTP {status}"));
+        return Err(format!("Google TTS API エラー: HTTP {status}"));
     }
 
     let resp: serde_json::Value = response.json()
-        .map_err(|_| "Could not read the Google TTS response.".to_string())?;
+        .map_err(|_| "Google TTS のレスポンスを読み取れませんでした。".to_string())?;
     let audio_b64 = resp["audioContent"]
         .as_str()
-        .ok_or("Missing audioContent in Google TTS response")?;
+        .ok_or("Google TTS のレスポンスに audioContent がありません")?;
 
     use base64::Engine;
     base64::engine::general_purpose::STANDARD
         .decode(audio_b64)
-        .map_err(|e| format!("Base64 decode error: {}", e))
+        .map_err(|e| format!("Base64 デコードエラー: {}", e))
 }
 
 /// A stop signal that can be shared with the playback thread.
@@ -122,12 +122,12 @@ pub fn play_audio(audio_data: &[u8], stop: &StopSignal) -> Result<(), String> {
     use std::time::Duration;
 
     let (_stream, stream_handle) =
-        OutputStream::try_default().map_err(|e| format!("Audio output error: {}", e))?;
+        OutputStream::try_default().map_err(|e| format!("音声出力エラー: {}", e))?;
     let sink =
-        Sink::try_new(&stream_handle).map_err(|e| format!("Audio sink error: {}", e))?;
+        Sink::try_new(&stream_handle).map_err(|e| format!("音声シンクエラー: {}", e))?;
 
     let cursor = Cursor::new(audio_data.to_vec());
-    let source = Decoder::new(cursor).map_err(|e| format!("Audio decode error: {}", e))?;
+    let source = Decoder::new(cursor).map_err(|e| format!("音声デコードエラー: {}", e))?;
 
     sink.append(source);
 

@@ -2,7 +2,7 @@ use reqwest::header::HeaderValue;
 
 pub fn api_key_header(api_key: &str) -> Result<HeaderValue, String> {
     let mut value = HeaderValue::from_str(api_key)
-        .map_err(|_| "Invalid API key format. Check the key in Settings.".to_string())?;
+        .map_err(|_| "API キーの形式が無効です。設定でキーを確認してください。".to_string())?;
     value.set_sensitive(true);
     Ok(value)
 }
@@ -10,13 +10,13 @@ pub fn api_key_header(api_key: &str) -> Result<HeaderValue, String> {
 // Do not expose URLs, headers, or nested transport errors to the UI or logs.
 pub fn request_error(service: &str, error: reqwest::Error) -> String {
     let reason = if error.is_timeout() {
-        "request timed out"
+        "リクエストがタイムアウトしました"
     } else if error.is_connect() {
-        "could not connect"
+        "接続できませんでした"
     } else {
-        "request could not be completed"
+        "リクエストを完了できませんでした"
     };
-    format!("{service} request failed: {reason}")
+    format!("{service} リクエストに失敗しました: {reason}")
 }
 
 #[cfg(test)]
@@ -51,7 +51,7 @@ mod tests {
             .header("x-goog-api-key", invalid).build().unwrap_err()
             .with_url(url.parse().unwrap());
         let message = request_error("Gemini", error);
-        assert!(message.starts_with("Gemini request failed:"));
+        assert!(message.starts_with("Gemini リクエストに失敗しました:"));
         assert!(!message.contains(key));
         assert!(!message.contains("example.invalid"));
     }

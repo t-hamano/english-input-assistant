@@ -15,7 +15,7 @@ fn http_client() -> Result<&'static Client, String> {
         .timeout(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+        .map_err(|e| format!("HTTP クライアントエラー: {}", e))?;
 
     // Keep the connection pool alive across translations and retries.
     // Failed initialization remains retryable.
@@ -81,7 +81,7 @@ fn parse_response(body: &str) -> Result<TranslationResult, String> {
                     return Ok(result);
                 }
             }
-            Err("Failed to parse LLM response.".to_string())
+            Err("LLM のレスポンスを解析できませんでした。".to_string())
         }
     }
 }
@@ -111,7 +111,7 @@ pub fn translate(
     is_current: impl Fn() -> bool,
 ) -> Result<TranslationResult, String> {
     if !ALLOWED_MODELS.iter().any(|m| m.value == model) {
-        return Err(format!("Invalid model: {}", model));
+        return Err(format!("無効なモデル: {}", model));
     }
 
     let client = http_client()?;
@@ -174,7 +174,7 @@ pub fn translate(
 
     if !response.status().is_success() {
         let status = response.status();
-        return Err(format!("Gemini API error: HTTP {status}"));
+        return Err(format!("Gemini API エラー: HTTP {status}"));
     }
 
     stream::read_response(std::io::BufReader::new(response), on_translation, is_current)

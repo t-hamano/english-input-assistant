@@ -45,12 +45,12 @@ async fn confirm_install(app: AppHandle, version: String) -> Result<bool, String
     tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .message(format!(
-                "English Input Assistant {version} is available. Install and restart now?\n\nSave any settings and finish your current translation before continuing."
+                "English Input Assistant {version} が利用可能です。今すぐインストールして再起動しますか？\n\n続行する前に設定を保存し、実行中の翻訳を完了してください。"
             ))
-            .title("Update available")
+            .title("アップデートがあります")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Install and restart".into(),
-                "Later".into(),
+                "インストールして再起動".into(),
+                "後で".into(),
             ))
             .blocking_show()
     })
@@ -74,11 +74,11 @@ pub async fn check(
         .updater_builder()
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("Could not initialize updates: {e}"))?;
+        .map_err(|e| format!("アップデートを初期化できませんでした: {e}"))?;
     let Some(update) = updater
         .check()
         .await
-        .map_err(|e| format!("Could not check for updates: {e}"))?
+        .map_err(|e| format!("アップデートを確認できませんでした: {e}"))?
     else {
         return Ok(UpdateOutcome::UpToDate);
     };
@@ -104,11 +104,11 @@ pub async fn check(
         )
         .await;
     if let Err(error) = result {
-        let message = format!("Could not install the update: {error}");
+        let message = format!("アップデートをインストールできませんでした: {error}");
         // Once installation was accepted, show failures even for startup checks.
         app.dialog()
             .message(&message)
-            .title("Update failed")
+            .title("アップデート失敗")
             .kind(MessageDialogKind::Error)
             .show(|_| {});
         return Err(message);

@@ -53,6 +53,9 @@ type UpdateProgress =
   | { event: "downloading"; received: number; total: number | null }
   | { event: "installing" };
 
+const IS_DEV = import.meta.env.DEV;
+const DEV_UPDATE_MESSAGE = "アップデートはインストール済みのリリースビルドでのみ利用できます。";
+
 export function App() {
   const [settings, setSettings] = useState<AppConfig | null>(null);
   const [geminiModels, setGeminiModels] = useState<GeminiModel[]>([]);
@@ -101,31 +104,31 @@ export function App() {
   useLayoutEffect(() => {
     if (!settings && !error) return;
     const height = Math.max(300, document.body.scrollHeight);
-    void getCurrentWindow().setSize(new LogicalSize(400, height)).catch(console.error);
+    void getCurrentWindow().setSize(new LogicalSize(500, height)).catch(console.error);
   }, [settings, error, updateStatus]);
 
   const handleCheckForUpdates = useCallback(async () => {
     setCheckingUpdates(true);
     setUpdateError(false);
-    setUpdateStatus("Checking for updates...");
+    setUpdateStatus("アップデートを確認中...");
     const onProgress = new Channel<UpdateProgress>();
     onProgress.onmessage = (progress) => {
       if (progress.event === "installing") {
-        setUpdateStatus("Installing update. The app will restart...");
+        setUpdateStatus("アップデートをインストール中。アプリが再起動します...");
       } else if (progress.total) {
         const percent = Math.min(100, Math.round(progress.received / progress.total * 100));
-        setUpdateStatus(`Downloading update... ${percent}%`);
+        setUpdateStatus(`アップデートをダウンロード中... ${percent}%`);
       } else {
-        setUpdateStatus("Downloading update...");
+        setUpdateStatus("アップデートをダウンロード中...");
       }
     };
     try {
       const result = await invoke<UpdateOutcome>("check_for_updates", { onProgress });
       const messages: Record<UpdateOutcome, string> = {
-        up_to_date: "You are using the latest version.",
-        cancelled: "Update postponed. You can check again later.",
-        busy: "An update check is already in progress.",
-        development: "Updates are available in installed release builds only.",
+        up_to_date: "最新バージョンを使用しています。",
+        cancelled: "アップデートを延期しました。後で再確認できます。",
+        busy: "アップデートの確認がすでに進行中です。",
+        development: DEV_UPDATE_MESSAGE,
       };
       setUpdateStatus(messages[result]);
     } catch (e) {
@@ -182,7 +185,7 @@ export function App() {
   if (!settings) {
     return (
       <div className="content">
-        {error ? <div className="error" role="alert">{error}</div> : <p>Loading settings...</p>}
+        {error ? <div className="error" role="alert">{error}</div> : <p>設定を読み込み中...</p>}
       </div>
     );
   }
@@ -190,15 +193,15 @@ export function App() {
   return (
     <div className="content">
       <div className="field">
-        <label htmlFor="shortcut">Shortcut Key</label>
+        <label htmlFor="shortcut">ショートカットキー</label>
         <div className="shortcut">
           <input
             type="text"
             id="shortcut"
             readOnly
             className="shortcut-input"
-            value={capturing ? "Press keys..." : formatShortcut(settings.shortcut)}
-            placeholder="Click to record"
+            value={capturing ? "キーを押してください..." : formatShortcut(settings.shortcut)}
+            placeholder="クリックして記録"
             onFocus={() => setCapturing(true)}
             onBlur={() => setCapturing(false)}
             onKeyDown={handleShortcutKeyDown}
@@ -211,12 +214,12 @@ export function App() {
             }}
             disabled={!settings.shortcut}
           >
-            Reset
+            リセット
           </button>
         </div>
       </div>
       <div className="field">
-        <label htmlFor="google-key">Google API Key</label>
+        <label htmlFor="google-key">Google API キー</label>
         <input
           type="password"
           id="google-key"
@@ -224,10 +227,10 @@ export function App() {
           value={settings.google_api_key}
           onChange={(e) => update("google_api_key", e.target.value)}
         />
-        <small>Stored securely on this device. Clear the field and save to remove it.</small>
+        <small>この端末に安全に保存されます。削除するには空欄にして保存してください。</small>
       </div>
       <div className="field">
-        <label htmlFor="gemini-model">Gemini Model</label>
+        <label htmlFor="gemini-model">Gemini モデル</label>
         <select
           id="gemini-model"
           value={settings.gemini_model}
@@ -241,17 +244,17 @@ export function App() {
         </select>
       </div>
       <div className="field">
-        <label htmlFor="additional-prompt">Additional Prompt</label>
+        <label htmlFor="additional-prompt">追加プロンプト</label>
         <textarea
           id="additional-prompt"
           rows={3}
-          placeholder="e.g. Use casual tone"
+          placeholder="例: カジュアルな口調で"
           value={settings.additional_prompt}
           onChange={(e) => update("additional_prompt", e.target.value)}
         />
       </div>
       <div className="field">
-        <label htmlFor="tts-voice">Voice Type</label>
+        <label htmlFor="tts-voice">音声タイプ</label>
         <div className="voice">
           <select
             id="tts-voice"
@@ -266,7 +269,7 @@ export function App() {
           </select>
           <button
             type="button"
-            aria-label={playing ? "Stop preview" : "Play preview"}
+            aria-label={playing ? "プレビュー停止" : "プレビュー再生"}
             aria-pressed={playing || undefined}
             onClick={() =>
               playing
@@ -281,7 +284,7 @@ export function App() {
         </div>
       </div>
       <div className="field">
-        <label htmlFor="tts-speed">Voice Speed ({settings.tts_speed.toFixed(1)}x)</label>
+        <label htmlFor="tts-speed">音声速度 ({settings.tts_speed.toFixed(1)}x)</label>
         <input
           type="range"
           id="tts-speed"
@@ -299,17 +302,21 @@ export function App() {
             checked={settings.auto_start}
             onChange={(e) => update("auto_start", e.target.checked)}
           />
-          Launch at startup
+          起動時に自動実行
         </label>
       </div>
       <div className="field updates">
         <div className="updates-heading">
-          <span>Version {version || "..."}</span>
-          <button type="button" onClick={handleCheckForUpdates} disabled={checkingUpdates}>
-            {checkingUpdates ? "Updating..." : "Check for updates"}
+          <span>バージョン {version || "..."}</span>
+          <button type="button" onClick={handleCheckForUpdates} disabled={checkingUpdates || IS_DEV}>
+            {checkingUpdates ? "更新中..." : "アップデートを確認"}
           </button>
         </div>
-        {updateStatus && (
+        {IS_DEV ? (
+          <p className="update-status" role="status">
+            {DEV_UPDATE_MESSAGE}
+          </p>
+        ) : updateStatus && (
           <p className={updateError ? "error" : "update-status"} role={updateError ? "alert" : "status"}>
             {updateStatus}
           </p>
@@ -318,10 +325,10 @@ export function App() {
       {error && <div className="error">{error}</div>}
       <div className="buttons">
         <button className="btn-primary" onClick={handleSave}>
-          Save
+          保存
         </button>
         <button onClick={handleCancel}>
-          Cancel
+          キャンセル
         </button>
       </div>
     </div>

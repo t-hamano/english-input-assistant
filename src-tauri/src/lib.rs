@@ -59,7 +59,7 @@ fn translate_with_retry(
 
     for attempt in 1..=max_retries {
         if !is_current() {
-            return Err("Translation cancelled".to_string());
+            return Err("翻訳をキャンセルしました".to_string());
         }
         match llm::translate(api_key, model, input, additional_prompt, |result| {
             displayed = true;
@@ -108,8 +108,8 @@ fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
     };
     if api_key.is_empty() {
         emit_translation(app, request_id, &TranslationResult {
-            translated: format!("[Translated] {}", input),
-            explanation: "N/A (no API key set)".to_string(),
+            translated: format!("[翻訳] {}", input),
+            explanation: "N/A（API キー未設定）".to_string(),
             source_is_english: false,
         }, true);
         return;
@@ -305,7 +305,7 @@ fn on_shortcut(app: AppHandle) {
             let _ = cb.set_text(&selected_text);
         }
         keyboard::send_paste();
-        let _ = app.emit("show-error", "Text is too long (max 5000 characters). Please select a shorter text.");
+        let _ = app.emit("show-error", "テキストが長すぎます（最大 5000 文字）。短いテキストを選択してください。");
         show_popup(&app, cx, cy);
         return;
     }
@@ -427,7 +427,7 @@ fn start_tts(app: &AppHandle, window_label: &str) {
 #[tauri::command]
 async fn play_tts(text: String, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || play_tts_inner(text, app))
-        .await.map_err(|_| "Could not start audio playback.".to_string())
+        .await.map_err(|_| "音声の再生を開始できませんでした。".to_string())
 }
 
 fn play_tts_inner(text: String, app: AppHandle) {
@@ -505,7 +505,7 @@ fn stop_tts(app: AppHandle) {
 #[tauri::command]
 async fn preview_tts(voice: String, speed: f64, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || preview_tts_inner(voice, speed, app))
-        .await.map_err(|_| "Could not start audio playback.".to_string())
+        .await.map_err(|_| "音声の再生を開始できませんでした。".to_string())
 }
 
 fn preview_tts_inner(voice: String, speed: f64, app: AppHandle) {
@@ -568,13 +568,13 @@ fn get_tts_voices() -> Vec<tts::TtsVoice> {
 #[tauri::command]
 async fn get_config(app: AppHandle) -> Result<SettingsConfig, String> {
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().config_store.settings())
-        .await.map_err(|_| "Could not load settings.".to_string())?
+        .await.map_err(|_| "設定を読み込めませんでした。".to_string())?
 }
 
 #[tauri::command]
 async fn save_config(config: SettingsConfig, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || save_settings(config, app))
-        .await.map_err(|_| "Could not save settings.".to_string())?
+        .await.map_err(|_| "設定を保存できませんでした。".to_string())?
 }
 
 fn save_settings(settings: SettingsConfig, app: AppHandle) -> Result<(), String> {
@@ -585,7 +585,7 @@ fn save_settings(settings: SettingsConfig, app: AppHandle) -> Result<(), String>
     } else {
         Some(
             Shortcut::from_str(&config.shortcut)
-                .map_err(|e| format!("Invalid shortcut \"{}\": {}", config.shortcut, e))?,
+                .map_err(|e| format!("無効なショートカット \"{}\": {}", config.shortcut, e))?,
         )
     };
 
@@ -596,7 +596,7 @@ fn save_settings(settings: SettingsConfig, app: AppHandle) -> Result<(), String>
         let _ = gs.unregister_all();
         if let Some(shortcut) = new_shortcut {
             gs.register(shortcut)
-                .map_err(|e| format!("Failed to register shortcut: {}", e))?;
+                .map_err(|e| format!("ショートカットの登録に失敗しました: {}", e))?;
         }
     }
 
@@ -620,9 +620,9 @@ fn open_settings(app: AppHandle) {
     }
 
     let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("src/settings.html".into()))
-        .title("Settings — English Input Assistant")
-        .inner_size(400.0, 300.0)
-        .min_inner_size(400.0, 300.0)
+        .title("設定 — English Input Assistant")
+        .inner_size(500.0, 300.0)
+        .min_inner_size(500.0, 300.0)
         .resizable(false)
         .build();
 }
@@ -689,8 +689,8 @@ pub fn run() {
             });
 
             // System tray
-            let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let settings_item = MenuItemBuilder::with_id("settings", "設定").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "終了").build(app)?;
             let tray_menu = MenuBuilder::new(app)
                 .item(&settings_item)
                 .separator()

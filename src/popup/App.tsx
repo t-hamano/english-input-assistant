@@ -163,13 +163,13 @@ export function App() {
   return (
     <div id="popup">
       <div className="drag-handle" data-tauri-drag-region />
-      <button className="btn-close" title="Close" onClick={handleClose}>
+      <button className="btn-close" title="閉じる" onClick={handleClose}>
         &#x2715;
       </button>
       {view.type === "loading" && (
         <div className="loading">
           <div className="spinner" />
-          <span>Translating...</span>
+          <span>翻訳中...</span>
         </div>
       )}
       {view.type === "result" && (
@@ -179,22 +179,22 @@ export function App() {
           <div className="explanation" key={translation.latestRequestId} aria-busy={!view.complete} role="region" aria-label={view.result.source_is_english ? "改善点・文法解説" : "文法解説"} tabIndex={0}>
             {view.error ? (
               <div role="alert">
-                <p className="error-msg">Could not load the explanation. You can still use the English text.</p>
-                <details><summary>Error details</summary>{view.error}</details>
-                <button onClick={handleRetry}>Retry translation</button>
+                <p className="error-msg">解説を読み込めませんでした。英文はそのまま使用できます。</p>
+                <details><summary>エラー詳細</summary>{view.error}</details>
+                <button onClick={handleRetry}>翻訳を再試行</button>
               </div>
             ) : !view.complete ? (
-              <span role="status">Loading explanation...</span>
+              <span role="status">解説を読み込み中...</span>
             ) : view.result.explanation}
           </div>
           {audioError && <p className="error-msg" role="alert">{audioError}</p>}
           <div className="buttons">
             <div className="buttons-left">
               <button className="btn-primary" onClick={handleReplace}>
-                Replace
+                置き換え
               </button>
               <button
-                aria-label={playing ? "Stop" : "Play"}
+                aria-label={playing ? "停止" : "再生"}
                 aria-pressed={playing || undefined}
                 onClick={handlePlay}
               >
@@ -203,7 +203,7 @@ export function App() {
             </div>
             <div className="buttons-right">
               <button
-                aria-label={recording ? "Stop recording" : "Record"}
+                aria-label={recording ? "録音停止" : "録音"}
                 aria-pressed={recording || undefined}
                 disabled={recordingPlaying}
                 onClick={handleRecord}
@@ -211,7 +211,7 @@ export function App() {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z"/></svg>
               </button>
               <button
-                aria-label={recordingPlaying ? "Stop playback" : "Play recording"}
+                aria-label={recordingPlaying ? "再生停止" : "録音を再生"}
                 aria-pressed={recordingPlaying || undefined}
                 disabled={recording || !recordedAudioRef.current}
                 onClick={handlePlayRecording}
@@ -227,10 +227,10 @@ export function App() {
           <p className="error-msg">{view.message}</p>
           <div className="buttons">
             <button className="btn-primary" onClick={handleRetry}>
-              Retry
+              再試行
             </button>
             <button onClick={handleClose}>
-              Close
+              閉じる
             </button>
           </div>
         </div>

@@ -114,14 +114,14 @@ impl ConfigStore {
 
 fn credential() -> Result<keyring::Entry, String> {
     keyring::Entry::new("com.tetsu.english-input-assistant", "google-api-key")
-        .map_err(|_| "Could not access the system credential store. Check its permissions and try again.".into())
+        .map_err(|_| "システムの資格情報ストアにアクセスできませんでした。アクセス許可を確認して再試行してください。".into())
 }
 
 fn read_key(entry: &keyring::Entry) -> Result<String, String> {
     match entry.get_password() {
         Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => Ok(String::new()),
-        Err(_) => Err("Could not read the API key from the system credential store. Unlock it or allow access, then try again.".into()),
+        Err(_) => Err("システムの資格情報ストアから API キーを読み取れませんでした。ロックを解除するかアクセスを許可してから再試行してください。".into()),
     }
 }
 
@@ -129,11 +129,11 @@ fn write_key(entry: &keyring::Entry, key: &str) -> Result<(), String> {
     if key.is_empty() {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(_) => Err("Could not delete the API key from the system credential store.".into()),
+            Err(_) => Err("システムの資格情報ストアから API キーを削除できませんでした。".into()),
         }
     } else {
         entry.set_password(key)
-            .map_err(|_| "Could not save the API key to the system credential store. Check its permissions and try again.".into())
+            .map_err(|_| "システムの資格情報ストアに API キーを保存できませんでした。アクセス許可を確認して再試行してください。".into())
     }
 }
 

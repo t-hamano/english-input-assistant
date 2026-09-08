@@ -69,17 +69,17 @@ impl StreamResponse {
             return Ok(());
         }
         let chunk: Value = serde_json::from_str(data)
-            .map_err(|e| format!("Invalid Gemini stream event: {}", e))?;
+            .map_err(|e| format!("無効な Gemini ストリームイベント: {}", e))?;
         if chunk.get("error").is_some() {
-            return Err("Gemini returned a stream error.".to_string());
+            return Err("Gemini がストリームエラーを返しました。".to_string());
         }
         if chunk["promptFeedback"]["blockReason"].as_str().is_some() {
-            return Err("Gemini blocked the request.".to_string());
+            return Err("Gemini がリクエストをブロックしました。".to_string());
         }
         let candidate = &chunk["candidates"][0];
         if let Some(reason) = candidate["finishReason"].as_str() {
             if reason != "STOP" {
-                return Err("Gemini generation stopped before completion.".to_string());
+                return Err("Gemini の生成が完了前に停止しました。".to_string());
             }
             self.finished = true;
         }
@@ -103,17 +103,17 @@ impl StreamResponse {
 
     fn finish(self) -> Result<TranslationResult, String> {
         if !self.finished {
-            return Err("Gemini stream ended before generation completed".to_string());
+            return Err("生成完了前に Gemini ストリームが終了しました".to_string());
         }
         let result = parse_response(&self.text)?;
         if result.translated.trim().is_empty() {
-            return Err("Gemini returned an empty translation".to_string());
+            return Err("Gemini が空の翻訳を返しました".to_string());
         }
         if let Some(preview) = self.preview {
             if preview.translated != result.translated
                 || preview.source_is_english != result.source_is_english
             {
-                return Err("Gemini changed the translation after it was displayed".to_string());
+                return Err("表示後に Gemini が翻訳を変更しました".to_string());
             }
         }
         Ok(result)
@@ -130,14 +130,14 @@ pub(super) fn read_response(
     let mut data = String::new();
     loop {
         if !is_current() {
-            return Err("Translation cancelled".to_string());
+            return Err("翻訳をキャンセルしました".to_string());
         }
         line.clear();
         let count = reader
             .read_line(&mut line)
-            .map_err(|_| "Gemini stream read failed.".to_string())?;
+            .map_err(|_| "Gemini ストリームの読み取りに失敗しました。".to_string())?;
         if !is_current() {
-            return Err("Translation cancelled".to_string());
+            return Err("翻訳をキャンセルしました".to_string());
         }
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if count == 0 || trimmed.is_empty() {
