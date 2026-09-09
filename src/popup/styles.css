@@ -140,4 +140,5 @@ body,
 
 .error-msg {
   color: #d32f2f;
+  font-weight: 600;
 }

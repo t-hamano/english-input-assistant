@@ -2,6 +2,7 @@ mod config;
 mod google_api;
 mod keyboard;
 mod llm;
+mod selection;
 mod tts;
 mod updater;
 mod window_manager;
@@ -26,18 +27,14 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use config::{ConfigStore, SettingsConfig};
 use llm::TranslationResult;
+use selection::{focus_matches, PendingSelection, Selection};
 use tts::{AudioCache, StopSignal};
 
 /// State shared between shortcut handler and commands.
 struct AppState {
     translation_id: AtomicU64,
-    selected_text: Mutex<String>,
-    /// Source window handle to restore focus after paste (Windows).
-    #[cfg(target_os = "windows")]
-    source_hwnd: Mutex<usize>,
-    /// Source application PID to restore focus after paste (macOS).
-    #[cfg(target_os = "macos")]
-    source_pid: Mutex<i32>,
+    // Also serializes clipboard/focus operations. Never held during an API call.
+    selection: Mutex<PendingSelection>,
     audio_cache: AudioCache,
     config_store: ConfigStore,
     tts_stop: Mutex<Option<StopSignal>>,
@@ -189,8 +186,7 @@ fn show_popup(app: &AppHandle, x: i32, y: i32) {
 /// means the caller must not synthesize Ctrl+X / Ctrl+V — they would hit an
 /// unrelated window.
 #[cfg(target_os = "windows")]
-fn restore_source_focus(app: &AppHandle) -> bool {
-    let source_hwnd = *app.state::<AppState>().source_hwnd.lock().unwrap();
+fn restore_source_focus(source_hwnd: usize) -> bool {
     if source_hwnd == 0 {
         return false;
     }
@@ -200,7 +196,7 @@ fn restore_source_focus(app: &AppHandle) -> bool {
         }
         window_manager::set_foreground_window(source_hwnd);
         thread::sleep(Duration::from_millis(if attempt == 0 { 150 } else { 100 }));
-        if window_manager::get_foreground_window() == source_hwnd {
+        if focus_matches(source_hwnd, window_manager::get_foreground_window()) {
             return true;
         }
     }
@@ -208,242 +204,227 @@ fn restore_source_focus(app: &AppHandle) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn restore_source_focus(app: &AppHandle) -> bool {
-    let source_pid = *app.state::<AppState>().source_pid.lock().unwrap();
-    if source_pid == 0 {
+fn restore_source_focus(source: usize) -> bool {
+    let Ok(source_pid) = i32::try_from(source) else { return false; };
+    if !window_manager::set_foreground_pid(source_pid) {
         return false;
     }
-    window_manager::set_foreground_pid(source_pid);
     thread::sleep(Duration::from_millis(150));
-    // 0 = could not read (osascript hiccup); only a confirmed mismatch is failure.
-    let fg = window_manager::get_foreground_pid();
-    fg == 0 || fg == source_pid
+    source_is_focused(source)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn restore_source_focus(_app: &AppHandle) -> bool {
-    true // no source tracking on this platform
+fn restore_source_focus(_source: usize) -> bool {
+    false
+}
+
+fn foreground_source() -> usize {
+    #[cfg(target_os = "windows")]
+    { window_manager::get_foreground_window() }
+    #[cfg(target_os = "macos")]
+    { window_manager::get_foreground_pid().max(0) as usize }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { 0 }
+}
+
+fn source_is_focused(source: usize) -> bool {
+    focus_matches(source, foreground_source())
+}
+
+fn capture_source(_app: &AppHandle) -> Option<usize> {
+    let source = foreground_source();
+    if source == 0 { return None; }
+    #[cfg(target_os = "windows")]
+    for label in ["main", "settings"] {
+        if _app.get_webview_window(label).and_then(|w| w.hwnd().ok())
+            .is_some_and(|hwnd| hwnd.0 as usize == source) {
+            return None;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if source == window_manager::own_pid() as usize { return None; }
+    Some(source)
+}
+
+fn hide_popup(app: &AppHandle) -> Result<(), String> {
+    // Notify on every backend hide, including captures that later fail or are empty.
+    app.emit_to("main", "popup-hiding", ()).map_err(|e| e.to_string())?;
+    if let Some(win) = app.get_webview_window("main") {
+        win.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn write_clipboard(text: &str) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|_| "クリップボードにアクセスできませんでした。".to_string())?;
+    clipboard.set_text(text)
+        .map_err(|_| "クリップボードを書き換えられませんでした。".to_string())
+}
+
+fn read_clipboard() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|_| "クリップボードにアクセスできませんでした。".to_string())?;
+    clipboard.get_text()
+        .map_err(|_| "クリップボードのテキストを読み取れませんでした。".to_string())
 }
 
 fn on_shortcut(app: AppHandle) {
-    debug_log!("[rust] shortcut triggered");
-    let request_id = app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst) + 1;
-
+    let state = app.state::<AppState>();
+    // Ignore repeats while a cut/paste is in progress. A second operation must
+    // never change the source window underneath the first one.
+    let Ok(mut pending) = state.selection.try_lock() else { return; };
     let (cx, cy) = keyboard::get_cursor_position();
-
-    // Windows: capture the source window, unless the foreground is one of ours.
-    #[cfg(target_os = "windows")]
-    {
-        let fg_hwnd = window_manager::get_foreground_window();
-        let own_hwnds: Vec<usize> = ["main", "settings"]
-            .iter()
-            .filter_map(|label| {
-                app.get_webview_window(label)
-                    .and_then(|w| w.hwnd().ok())
-                    .map(|h| h.0 as usize)
-            })
-            .collect();
-
-        if !own_hwnds.contains(&fg_hwnd) {
-            if let Some(state) = app.try_state::<AppState>() {
-                *state.source_hwnd.lock().unwrap() = fg_hwnd;
-            }
-        }
-    }
-
-    // macOS: capture the source app, unless our own process is frontmost.
-    #[cfg(target_os = "macos")]
-    {
-        let fg_pid = window_manager::get_foreground_pid();
-        let own_pid = window_manager::own_pid();
-
-        if fg_pid != own_pid {
-            if let Some(state) = app.try_state::<AppState>() {
-                *state.source_pid.lock().unwrap() = fg_pid;
-            }
-        }
-    }
-
-    // Hide the popup, wait for the shortcut keys to be released.
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.hide();
-    }
-    thread::sleep(Duration::from_millis(300));
-    keyboard::release_modifiers();
-    thread::sleep(Duration::from_millis(50));
-
-    // Confirm the source window is focused before synthesizing Ctrl+X.
-    if !restore_source_focus(&app) {
-        debug_log!("[rust] on_shortcut: source focus unconfirmed, aborting capture");
-        let _ = app.emit(
-            "show-error",
-            "元のウィンドウにフォーカスを戻せませんでした。もう一度お試しください。",
-        );
+    if pending.current().is_some() {
+        // Preserve the outstanding cut until the user replaces or restores it.
         show_popup(&app, cx, cy);
         return;
     }
+    let request_id = state.translation_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let source = capture_source(&app);
+    if hide_popup(&app).is_err() { return; }
 
-    // Clear clipboard before cut so we can detect if anything was actually selected
-    if let Ok(mut cb) = arboard::Clipboard::new() {
-        let _ = cb.set_text("");
-    }
-    thread::sleep(Duration::from_millis(50));
-
-    keyboard::send_cut();
-    debug_log!("[rust] Cut sent");
-    thread::sleep(Duration::from_millis(200));
-
-    // Read clipboard
-    let mut clipboard = match arboard::Clipboard::new() {
-        Ok(c) => c,
-        Err(_e) => {
-            debug_log!("[rust] clipboard error: {}", _e);
+    let captured = (|| {
+        let source = source.ok_or("元のウィンドウを確認できませんでした。")?;
+        thread::sleep(Duration::from_millis(300));
+        keyboard::release_modifiers();
+        thread::sleep(Duration::from_millis(50));
+        if !restore_source_focus(source) {
+            return Err("元のウィンドウにフォーカスを戻せませんでした。".to_string());
+        }
+        let text = selection::capture(
+            || {
+                write_clipboard("")?;
+                // Confirm the clear succeeded before allowing a cut or later read.
+                if !read_clipboard()?.is_empty() {
+                    return Err("クリップボードを初期化できませんでした。".to_string());
+                }
+                Ok(())
+            },
+            || {
+                if !source_is_focused(source) {
+                    return Err("元のウィンドウのフォーカスが変わりました。".to_string());
+                }
+                keyboard::send_cut()
+            },
+            || {
+                thread::sleep(Duration::from_millis(200));
+                read_clipboard()
+            },
+        )?;
+        Ok((source, text))
+    })();
+    let (source, text) = match captured {
+        Ok(captured) => captured,
+        Err(message) => {
+            let _ = app.emit("show-error", message);
+            show_popup(&app, cx, cy);
             return;
         }
     };
-
-    let selected_text = match clipboard.get_text() {
-        Ok(t) => t,
-        Err(_e) => {
-            debug_log!("[rust] clipboard read error: {}", _e);
-            return;
-        }
-    };
-    drop(clipboard);
-    debug_log!("[rust] captured: {:?}", selected_text);
-
-    if selected_text.trim().is_empty() {
-        debug_log!("[rust] no text selected, aborting");
-        return;
-    }
-
-    // Limit text length to prevent excessive API usage
+    if text.is_empty() { return; }
     const MAX_TEXT_LENGTH: usize = 5000;
-    if selected_text.len() > MAX_TEXT_LENGTH {
-        debug_log!("[rust] text too long ({} chars), truncating to {}", selected_text.len(), MAX_TEXT_LENGTH);
-        // Restore original text since we won't process it
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text(&selected_text);
-        }
-        keyboard::send_paste();
-        let _ = app.emit("show-error", "テキストが長すぎます（最大 5000 文字）。短いテキストを選択してください。");
+    if text.trim().is_empty() || text.len() > MAX_TEXT_LENGTH {
+        // Restore only to this capture's source, never a previously stored target.
+        let message = match paste_text(&text, source) {
+            Ok(()) => "テキストが空白のみ、または長すぎます（最大 5000 バイト）。短いテキストを選択してください。".to_string(),
+            Err(error) => format!("{error} 原文はクリップボードから手動で復元してください。"),
+        };
+        let _ = app.emit("show-error", message);
         show_popup(&app, cx, cy);
         return;
     }
-
-    // Store selected text for retry
-    if let Some(state) = app.try_state::<AppState>() {
-        *state.selected_text.lock().unwrap() = selected_text.clone();
-    }
-
-    // Show popup with loading state
+    pending.begin(Selection { request_id, text: text.clone(), source });
     let _ = app.emit("show-loading", serde_json::json!({
-        "request_id": request_id, "text": selected_text,
+        "request_id": request_id, "text": text,
     }));
     show_popup(&app, cx, cy);
-
-    run_translation(&app, request_id, &selected_text);
+    drop(pending);
+    run_translation(&app, request_id, &text);
 }
 
 #[tauri::command]
-fn restore_original_text(app: AppHandle) {
-    app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst);
-    let text = app
-        .state::<AppState>()
-        .selected_text
-        .lock()
-        .unwrap()
-        .clone();
-    if text.is_empty() {
-        return;
+fn restore_original_text(request_id: u64, app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut pending = state.selection.try_lock()
+        .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
+    // Consume before restoring: duplicate or delayed commands cannot paste again.
+    let Some(selection) = pending.take(request_id) else { return Ok(()); };
+    state.translation_id.fetch_add(1, Ordering::SeqCst);
+    // The frontend has already stopped recording before invoking this command.
+    let _ = hide_popup(&app);
+    if let Err(error) = paste_text(&selection.text, selection.source) {
+        let message = match write_clipboard(&selection.text) {
+            Ok(()) => format!("{error} 原文をクリップボードにコピーしました。貼り付け先を確認して手動で復元してください。"),
+            Err(_) => {
+                // Retain the original if neither pasting nor clipboard recovery worked.
+                pending.begin(selection);
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+                return Err("原文を復元できませんでした。もう一度お試しください。".into());
+            }
+        };
+        // No active selection remains, so closing this error cannot paste again.
+        let _ = app.emit("show-error", message);
+        let (x, y) = keyboard::get_cursor_position();
+        show_popup(&app, x, y);
+        return Err("原文はクリップボードから手動で復元してください。".into());
     }
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.hide();
-    }
-    // Only type it back if the source window is confirmed focused; otherwise
-    // just leave it on the clipboard.
-    if restore_source_focus(&app) {
-        paste_text(&text);
-    } else {
-        debug_log!("[rust] restore_original_text: source focus unconfirmed, not pasting");
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text(&text);
-        }
-    }
+    Ok(())
 }
 
 #[tauri::command]
-fn do_paste(text: String, app: AppHandle) -> Result<(), String> {
-    app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst);
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.hide();
-    }
-
-    if !restore_source_focus(&app) {
-        debug_log!("[rust] do_paste: source focus unconfirmed, not pasting");
-        // Leave the translation on the clipboard and re-show the popup.
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text(&text);
-        }
+fn do_paste(text: String, request_id: u64, app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut pending = state.selection.try_lock()
+        .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
+    let selection = pending.get(request_id).ok_or("この翻訳はすでに終了しています。")?;
+    hide_popup(&app)?;
+    if let Err(error) = paste_text(&text, selection.source) {
+        // Keep the original bound to its source so Close can still restore it.
         if let Some(win) = app.get_webview_window("main") {
             let _ = win.show();
             let _ = win.set_focus();
         }
-        let _ = app.emit(
-            "show-error",
-            "元のウィンドウにフォーカスを戻せませんでした。翻訳結果をクリップボードにコピーしたので、貼り付け先を確認して手動で貼り付けてください。",
-        );
-        return Err("focus-unconfirmed".to_string());
+        return Err(error);
     }
-
-    paste_text(&text);
+    pending.take(request_id);
+    state.translation_id.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
 
-/// Put `text` on the clipboard and synthesize a paste. Caller must confirm the
-/// target window is focused first.
-fn paste_text(text: &str) {
-    let mut clipboard = match arboard::Clipboard::new() {
-        Ok(c) => c,
-        Err(_e) => {
-            debug_log!("[rust] clipboard error: {}", _e);
-            return;
-        }
-    };
-    if let Err(_e) = clipboard.set_text(text) {
-        debug_log!("[rust] clipboard write error: {}", _e);
-        return;
+/// Recheck focus immediately before synthesizing paste, including rollback paths.
+fn paste_text(text: &str, source: usize) -> Result<(), String> {
+    write_clipboard(text)?;
+    if !restore_source_focus(source) {
+        return Err("元のウィンドウにフォーカスを戻せませんでした。".into());
     }
-    drop(clipboard);
-    thread::sleep(Duration::from_millis(100));
-
     keyboard::release_modifiers();
     thread::sleep(Duration::from_millis(50));
-    keyboard::send_paste();
-    debug_log!("[rust] pasted: {:?}", text);
+    if !source_is_focused(source) {
+        return Err("元のウィンドウのフォーカスが変わりました。".into());
+    }
+    keyboard::send_paste()
 }
 
 #[tauri::command]
-fn retry_translation(app: AppHandle) {
-    let selected_text = app
-        .state::<AppState>()
-        .selected_text
-        .lock()
-        .unwrap()
-        .clone();
-
-    if selected_text.is_empty() {
-        return;
-    }
-
-    let request_id = app.state::<AppState>().translation_id.fetch_add(1, Ordering::SeqCst) + 1;
+fn retry_translation(request_id: u64, app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut pending = state.selection.try_lock()
+        .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
+    pending.get(request_id).ok_or("再試行できる翻訳がありません。")?;
+    let next_id = state.translation_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let selection = pending.retry(request_id, next_id).unwrap();
     let _ = app.emit("show-loading", serde_json::json!({
-        "request_id": request_id, "text": selected_text,
+        "request_id": next_id, "text": selection.text,
     }));
-
+    drop(pending);
     thread::spawn(move || {
-        run_translation(&app, request_id, &selected_text);
+        run_translation(&app, next_id, &selection.text);
     });
+    Ok(())
 }
 
 fn stop_current_tts(app: &AppHandle) {
@@ -711,11 +692,7 @@ pub fn run() {
             let auto_check_updates = config_store.get().auto_check_updates;
             app.manage(AppState {
                 translation_id: AtomicU64::new(0),
-                selected_text: Mutex::new(String::new()),
-                #[cfg(target_os = "windows")]
-                source_hwnd: Mutex::new(0),
-                #[cfg(target_os = "macos")]
-                source_pid: Mutex::new(0),
+                selection: Mutex::new(PendingSelection::default()),
                 audio_cache: AudioCache::new(),
                 config_store,
                 tts_stop: Mutex::new(None),

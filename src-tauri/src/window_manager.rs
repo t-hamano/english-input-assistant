@@ -38,21 +38,24 @@ mod imp {
             .output()
             .ok();
         output
+            .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse().ok())
+            .and_then(|s| s.trim().parse::<i32>().ok())
+            .filter(|pid| *pid > 0)
             .unwrap_or(0)
     }
 
     /// Brings the application with the given PID to the foreground.
-    pub fn set_foreground_pid(pid: i32) {
-        if pid == 0 {
-            return;
+    pub fn set_foreground_pid(pid: i32) -> bool {
+        if pid <= 0 {
+            return false;
         }
         let script = format!(
             "tell application \"System Events\" to set frontmost of (first application process whose unix id is {}) to true",
             pid
         );
-        let _ = Command::new("osascript").args(["-e", &script]).output();
+        Command::new("osascript").args(["-e", &script]).output()
+            .map(|output| output.status.success()).unwrap_or(false)
     }
 
     /// Returns the PID of the current process.

@@ -5,6 +5,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 import { initialTranslationState, translationReducer } from "./translation-state";
 import type { TranslationResult } from "./translation-state";
+import { watchRecordingLifecycle } from "./recording-lifecycle";
 
 const POPUP_WIDTH = 520;
 const MIN_HEIGHT = 300;
@@ -25,15 +26,18 @@ export function App() {
   const { view, originalText } = translation;
   const [playing, setPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingPlaying, setRecordingPlaying] = useState(false);
   const resultRef = useRef<TranslationResult | null>(null);
+  const requestIdRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingRequestRef = useRef(0);
   const recordingPendingRef = useRef(false);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
 
   resultRef.current = translation.requestId !== null && view.type === "result" ? view.result : null;
+  requestIdRef.current = translation.requestId;
 
   const resetRecording = useCallback(() => {
     // Invalidate pending microphone requests and queued recorder events.
@@ -59,9 +63,12 @@ export function App() {
     setRecordingPlaying(false);
   }, []);
 
+  useEffect(() => watchRecordingLifecycle(getCurrentWindow(), resetRecording), [resetRecording]);
+
   useEffect(() => {
     const unlisten = [
       listen<{ request_id: number; text: string }>("show-loading", (e) => {
+        setActionError(null);
         resultRef.current = null;
         dispatch({ type: "start", ...e.payload });
         resetRecording();
@@ -73,6 +80,7 @@ export function App() {
         dispatch({ type: "error", ...e.payload });
       }),
       listen<string>("show-error", (e) => {
+        setActionError(null);
         resetRecording();
         resultRef.current = null;
         dispatch({ type: "preflight-error", message: e.payload });
@@ -103,25 +111,40 @@ export function App() {
 
   const handleReplace = useCallback(async () => {
     const result = resultRef.current;
-    if (!result) return;
+    const requestId = requestIdRef.current;
+    if (!result || requestId === null) return;
+    resetRecording();
+    setActionError(null);
     try {
-      await invoke("do_paste", { text: result.translated });
-    } catch {
-      // Paste target unconfirmed; backend re-showed the popup. Keep it open.
+      await invoke("do_paste", { text: result.translated, requestId });
+    } catch (error) {
+      setActionError(String(error));
       return;
     }
-    resetRecording();
-    dispatch({ type: "dismiss" });
-    resultRef.current = null;
-    await closePopup();
-  }, [closePopup, resetRecording]);
+    if (requestIdRef.current === requestId) {
+      dispatch({ type: "dismiss" });
+      resultRef.current = null;
+    }
+    // Backend hides the completed request. Do not hide a newer popup here.
+  }, [resetRecording]);
 
   const handleClose = useCallback(async () => {
     resetRecording();
-    dispatch({ type: "dismiss" });
-    resultRef.current = null;
-    await invoke("restore_original_text");
-    await closePopup();
+    setActionError(null);
+    const requestId = requestIdRef.current;
+    if (requestId === null) {
+      await closePopup();
+      return;
+    }
+    try {
+      await invoke("restore_original_text", { requestId });
+      if (requestIdRef.current === requestId) {
+        dispatch({ type: "dismiss" });
+        resultRef.current = null;
+      }
+    } catch (error) {
+      setActionError(String(error));
+    }
   }, [closePopup, resetRecording]);
 
   const handlePlay = useCallback(async () => {
@@ -133,10 +156,15 @@ export function App() {
   }, [playing]);
 
   const handleRetry = useCallback(async () => {
+    const requestId = requestIdRef.current;
+    if (requestId === null) return;
     resetRecording();
-    dispatch({ type: "retry" });
-    resultRef.current = null;
-    await invoke("retry_translation");
+    setActionError(null);
+    try {
+      await invoke("retry_translation", { requestId });
+    } catch (error) {
+      setActionError(String(error));
+    }
   }, [resetRecording]);
 
   const handleRecord = useCallback(async () => {
@@ -284,7 +312,7 @@ export function App() {
         <div className="content">
           <p className="error-msg">{view.message}</p>
           <div className="buttons">
-            <button className="btn-primary" onClick={handleRetry}>
+            <button className="btn-primary" onClick={handleRetry} disabled={translation.requestId === null}>
               再試行
             </button>
             <button onClick={handleClose}>
@@ -293,6 +321,7 @@ export function App() {
           </div>
         </div>
       )}
+      {actionError && <p className="error-msg" role="alert">{actionError}</p>}
     </div>
   );
 }
