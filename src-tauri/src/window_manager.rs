@@ -54,8 +54,11 @@ mod imp {
             "tell application \"System Events\" to set frontmost of (first application process whose unix id is {}) to true",
             pid
         );
-        Command::new("osascript").args(["-e", &script]).output()
-            .map(|output| output.status.success()).unwrap_or(false)
+        Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
     }
 
     /// Returns the PID of the current process.

@@ -17,11 +17,14 @@ fn new_enigo() -> Option<Enigo> {
 
 fn send_action(key: char) -> Result<(), String> {
     let mut enigo = new_enigo().ok_or("キーボード操作を開始できませんでした。")?;
-    let result = enigo.key(ACTION_MODIFIER, Press)
+    let result = enigo
+        .key(ACTION_MODIFIER, Press)
         .and_then(|_| enigo.key(Key::Unicode(key), Click));
     // Release even if pressing the shortcut failed.
     let release = enigo.key(ACTION_MODIFIER, Release);
-    result.and(release).map_err(|_| "キーボード操作に失敗しました。".to_string())
+    result
+        .and(release)
+        .map_err(|_| "キーボード操作に失敗しました。".to_string())
 }
 
 pub fn send_cut() -> Result<(), String> {

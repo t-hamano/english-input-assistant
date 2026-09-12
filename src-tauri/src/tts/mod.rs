@@ -6,7 +6,6 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-
 /// Cache for audio data to avoid re-requesting the same text.
 pub struct AudioCache {
     cache: Mutex<HashMap<String, Vec<u8>>>,
@@ -36,28 +35,104 @@ pub struct TtsVoice {
 }
 
 pub const ALLOWED_VOICES: &[TtsVoice] = &[
-    TtsVoice { value: "en-US-Standard-A", label: "Standard-A（男性）", is_default: true },
-    TtsVoice { value: "en-US-Standard-B", label: "Standard-B（男性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-C", label: "Standard-C（女性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-D", label: "Standard-D（男性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-E", label: "Standard-E（女性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-F", label: "Standard-F（女性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-G", label: "Standard-G（女性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-H", label: "Standard-H（女性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-I", label: "Standard-I（男性）", is_default: false },
-    TtsVoice { value: "en-US-Standard-J", label: "Standard-J（男性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Aoede", label: "Chirp 3 HD Aoede（女性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Kore", label: "Chirp 3 HD Kore（女性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Leda", label: "Chirp 3 HD Leda（女性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Zephyr", label: "Chirp 3 HD Zephyr（女性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Charon", label: "Chirp 3 HD Charon（男性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Fenrir", label: "Chirp 3 HD Fenrir（男性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Orus", label: "Chirp 3 HD Orus（男性）", is_default: false },
-    TtsVoice { value: "en-US-Chirp3-HD-Puck", label: "Chirp 3 HD Puck（男性）", is_default: false },
+    TtsVoice {
+        value: "en-US-Standard-A",
+        label: "Standard-A（男性）",
+        is_default: true,
+    },
+    TtsVoice {
+        value: "en-US-Standard-B",
+        label: "Standard-B（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-C",
+        label: "Standard-C（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-D",
+        label: "Standard-D（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-E",
+        label: "Standard-E（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-F",
+        label: "Standard-F（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-G",
+        label: "Standard-G（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-H",
+        label: "Standard-H（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-I",
+        label: "Standard-I（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Standard-J",
+        label: "Standard-J（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Aoede",
+        label: "Chirp 3 HD Aoede（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Kore",
+        label: "Chirp 3 HD Kore（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Leda",
+        label: "Chirp 3 HD Leda（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Zephyr",
+        label: "Chirp 3 HD Zephyr（女性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Charon",
+        label: "Chirp 3 HD Charon（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Fenrir",
+        label: "Chirp 3 HD Fenrir（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Orus",
+        label: "Chirp 3 HD Orus（男性）",
+        is_default: false,
+    },
+    TtsVoice {
+        value: "en-US-Chirp3-HD-Puck",
+        label: "Chirp 3 HD Puck（男性）",
+        is_default: false,
+    },
 ];
 
 pub fn default_voice() -> &'static str {
-    ALLOWED_VOICES.iter().find(|v| v.is_default).map(|v| v.value).unwrap_or("en-US-Standard-A")
+    ALLOWED_VOICES
+        .iter()
+        .find(|v| v.is_default)
+        .map(|v| v.value)
+        .unwrap_or("en-US-Standard-A")
 }
 
 pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<Vec<u8>, String> {
@@ -65,7 +140,10 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
         return Err(format!("無効な音声: {}", voice));
     }
     if !(0.5..=2.0).contains(&speed) {
-        return Err(format!("無効な速度: {}。0.5〜2.0 の範囲で指定してください", speed));
+        return Err(format!(
+            "無効な速度: {}。0.5〜2.0 の範囲で指定してください",
+            speed
+        ));
     }
 
     let client = Client::builder()
@@ -92,7 +170,10 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
 
     let response = client
         .post(url)
-        .header("x-goog-api-key", crate::google_api::api_key_header(api_key)?)
+        .header(
+            "x-goog-api-key",
+            crate::google_api::api_key_header(api_key)?,
+        )
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -103,7 +184,8 @@ pub fn synthesize(api_key: &str, text: &str, voice: &str, speed: f64) -> Result<
         return Err(format!("Google TTS API エラー: HTTP {status}"));
     }
 
-    let resp: serde_json::Value = response.json()
+    let resp: serde_json::Value = response
+        .json()
         .map_err(|_| "Google TTS のレスポンスを読み取れませんでした。".to_string())?;
     let audio_b64 = resp["audioContent"]
         .as_str()
@@ -131,8 +213,7 @@ pub fn play_audio(audio_data: &[u8], stop: &StopSignal) -> Result<(), String> {
 
     let (_stream, stream_handle) =
         OutputStream::try_default().map_err(|e| format!("音声出力エラー: {}", e))?;
-    let sink =
-        Sink::try_new(&stream_handle).map_err(|e| format!("音声シンクエラー: {}", e))?;
+    let sink = Sink::try_new(&stream_handle).map_err(|e| format!("音声シンクエラー: {}", e))?;
 
     let cursor = Cursor::new(audio_data.to_vec());
     let source = Decoder::new(cursor).map_err(|e| format!("音声デコードエラー: {}", e))?;

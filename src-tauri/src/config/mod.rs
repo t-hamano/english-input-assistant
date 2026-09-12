@@ -177,7 +177,8 @@ mod tests {
             "google_api_key": "old-dummy-key",
             "additional_prompt": "Keep this preference",
             "auto_start": true
-        })).unwrap();
+        }))
+        .unwrap();
         let serialized = serde_json::to_string(&config).unwrap();
         assert!(!serialized.contains("old-dummy-key"));
         assert!(!serialized.contains("google_api_key"));
@@ -189,18 +190,27 @@ mod tests {
     #[test]
     #[ignore = "requires access to the OS credential store"]
     fn native_credential_round_trip() {
-        let user = format!("test-{}-{}", std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let user = format!(
+            "test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         let entry = keyring::Entry::new("com.tetsu.english-input-assistant.tests", &user).unwrap();
         struct Cleanup(keyring::Entry);
         impl Drop for Cleanup {
-            fn drop(&mut self) { let _ = self.0.delete_credential(); }
+            fn drop(&mut self) {
+                let _ = self.0.delete_credential();
+            }
         }
         let cleanup = Cleanup(entry);
         let entry = &cleanup.0;
         assert!(read_key(entry).unwrap().is_empty());
         write_key(entry, "dummy-test-key").unwrap();
-        let reopened = keyring::Entry::new("com.tetsu.english-input-assistant.tests", &user).unwrap();
+        let reopened =
+            keyring::Entry::new("com.tetsu.english-input-assistant.tests", &user).unwrap();
         assert_eq!(read_key(&reopened).unwrap(), "dummy-test-key");
         write_key(&reopened, "replacement-dummy-key").unwrap();
         assert_eq!(read_key(entry).unwrap(), "replacement-dummy-key");

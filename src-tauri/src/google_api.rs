@@ -47,8 +47,11 @@ mod tests {
         let invalid = format!("{key}\r\nInjected: value");
         assert!(!api_key_header(&invalid).unwrap_err().contains(key));
         let url = format!("https://example.invalid/?key={key}");
-        let error = reqwest::blocking::Client::new().post(&url)
-            .header("x-goog-api-key", invalid).build().unwrap_err()
+        let error = reqwest::blocking::Client::new()
+            .post(&url)
+            .header("x-goog-api-key", invalid)
+            .build()
+            .unwrap_err()
             .with_url(url.parse().unwrap());
         let message = request_error("Gemini", error);
         assert!(message.starts_with("Gemini リクエストに失敗しました:"));

@@ -18,13 +18,16 @@
     "test": "node --test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "lint:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "lint:rust:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "check-version": "node scripts/check-version.mjs",
     "tauri": "tauri",
     "prepare": "husky"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx,css}": "biome check --write --no-errors-on-unmatched",
-    "tests/**/*.ts": "biome check --write --no-errors-on-unmatched"
+    "tests/**/*.ts": "biome check --write --no-errors-on-unmatched",
+    "src-tauri/**/*.rs": "rustfmt --edition 2021"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

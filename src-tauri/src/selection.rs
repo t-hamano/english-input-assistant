@@ -58,7 +58,11 @@ mod tests {
     use super::*;
 
     fn selection(id: u64, source: usize) -> Selection {
-        Selection { request_id: id, source, text: "private original".into() }
+        Selection {
+            request_id: id,
+            source,
+            text: "private original".into(),
+        }
     }
 
     #[test]
@@ -99,10 +103,17 @@ mod tests {
 
     #[test]
     fn failed_cut_never_reads_clipboard() {
-        assert!(capture(|| Ok(()), || Err("cut failed".into()),
-            || panic!("must not read clipboard")).is_err());
+        assert!(capture(
+            || Ok(()),
+            || Err("cut failed".into()),
+            || panic!("must not read clipboard")
+        )
+        .is_err());
         assert!(capture(|| Ok(()), || Ok(()), || Err("read failed".into())).is_err());
-        assert_eq!(capture(|| Ok(()), || Ok(()), || Ok(String::new())).unwrap(), "");
+        assert_eq!(
+            capture(|| Ok(()), || Ok(()), || Ok(String::new())).unwrap(),
+            ""
+        );
     }
 
     #[test]

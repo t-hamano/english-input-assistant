@@ -36,7 +36,10 @@ fn build_user_message(input: &str, additional_prompt: &str) -> String {
     if additional_prompt.is_empty() {
         input.to_string()
     } else {
-        format!("{}\n\n[Additional instructions: {}]", input, additional_prompt)
+        format!(
+            "{}\n\n[Additional instructions: {}]",
+            input, additional_prompt
+        )
     }
 }
 
@@ -94,12 +97,24 @@ pub struct GeminiModel {
 }
 
 pub const ALLOWED_MODELS: &[GeminiModel] = &[
-    GeminiModel { value: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite", is_default: false },
-    GeminiModel { value: "gemini-3.8-flash", label: "Gemini 3.8 Flash", is_default: true },
+    GeminiModel {
+        value: "gemini-3.5-flash-lite",
+        label: "Gemini 3.5 Flash-Lite",
+        is_default: false,
+    },
+    GeminiModel {
+        value: "gemini-3.8-flash",
+        label: "Gemini 3.8 Flash",
+        is_default: true,
+    },
 ];
 
 pub fn default_model() -> &'static str {
-    ALLOWED_MODELS.iter().find(|m| m.is_default).map(|m| m.value).unwrap_or("gemini-3.8-flash")
+    ALLOWED_MODELS
+        .iter()
+        .find(|m| m.is_default)
+        .map(|m| m.value)
+        .unwrap_or("gemini-3.8-flash")
 }
 
 pub fn translate(
@@ -163,7 +178,10 @@ pub fn translate(
 
     let response = client
         .post(&url)
-        .header("x-goog-api-key", crate::google_api::api_key_header(api_key)?)
+        .header(
+            "x-goog-api-key",
+            crate::google_api::api_key_header(api_key)?,
+        )
         .header("content-type", "application/json")
         .json(&body)
         .send()
@@ -174,5 +192,9 @@ pub fn translate(
         return Err(format!("Gemini API エラー: HTTP {status}"));
     }
 
-    stream::read_response(std::io::BufReader::new(response), on_translation, is_current)
+    stream::read_response(
+        std::io::BufReader::new(response),
+        on_translation,
+        is_current,
+    )
 }

@@ -15,8 +15,8 @@ macro_rules! debug_log {
 }
 
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::{thread, time::Duration};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -52,21 +52,35 @@ fn translate_with_retry(
 ) -> Result<TranslationResult, String> {
     let max_retries = 3;
     let mut displayed = false;
-    let is_current = || app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id;
+    let is_current = || {
+        app.state::<AppState>()
+            .translation_id
+            .load(Ordering::SeqCst)
+            == request_id
+    };
 
     for attempt in 1..=max_retries {
         if !is_current() {
             return Err("翻訳をキャンセルしました".to_string());
         }
-        match llm::translate(api_key, model, input, additional_prompt, |result| {
-            displayed = true;
-            emit_translation(app, request_id, &result, false);
-        }, is_current) {
+        match llm::translate(
+            api_key,
+            model,
+            input,
+            additional_prompt,
+            |result| {
+                displayed = true;
+                emit_translation(app, request_id, &result, false);
+            },
+            is_current,
+        ) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 debug_log!(
                     "[rust] LLM attempt {}/{} failed: {}",
-                    attempt, max_retries, e
+                    attempt,
+                    max_retries,
+                    e
                 );
                 // Do not replace an English sentence the user may already be using.
                 if displayed || !is_current() {
@@ -84,18 +98,34 @@ fn translate_with_retry(
 }
 
 fn emit_translation(app: &AppHandle, request_id: u64, result: &TranslationResult, complete: bool) {
-    if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
-        let _ = app.emit("translation-update", serde_json::json!({
-            "request_id": request_id, "result": result, "complete": complete,
-        }));
+    if app
+        .state::<AppState>()
+        .translation_id
+        .load(Ordering::SeqCst)
+        == request_id
+    {
+        let _ = app.emit(
+            "translation-update",
+            serde_json::json!({
+                "request_id": request_id, "result": result, "complete": complete,
+            }),
+        );
     }
 }
 
 fn emit_translation_error(app: &AppHandle, request_id: u64, message: impl Into<String>) {
-    if app.state::<AppState>().translation_id.load(Ordering::SeqCst) == request_id {
-        let _ = app.emit("translation-error", serde_json::json!({
-            "request_id": request_id, "message": message.into(),
-        }));
+    if app
+        .state::<AppState>()
+        .translation_id
+        .load(Ordering::SeqCst)
+        == request_id
+    {
+        let _ = app.emit(
+            "translation-error",
+            serde_json::json!({
+                "request_id": request_id, "message": message.into(),
+            }),
+        );
     }
 }
 
@@ -123,7 +153,11 @@ fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
 
 fn get_llm_config(app: &AppHandle) -> Result<(String, String, String), String> {
     let config = app.state::<AppState>().config_store.get();
-    Ok((app.state::<AppState>().config_store.api_key()?, config.gemini_model, config.additional_prompt))
+    Ok((
+        app.state::<AppState>().config_store.api_key()?,
+        config.gemini_model,
+        config.additional_prompt,
+    ))
 }
 
 fn show_popup(app: &AppHandle, x: i32, y: i32) {
@@ -205,7 +239,9 @@ fn restore_source_focus(source_hwnd: usize) -> bool {
 
 #[cfg(target_os = "macos")]
 fn restore_source_focus(source: usize) -> bool {
-    let Ok(source_pid) = i32::try_from(source) else { return false; };
+    let Ok(source_pid) = i32::try_from(source) else {
+        return false;
+    };
     if !window_manager::set_foreground_pid(source_pid) {
         return false;
     }
@@ -220,11 +256,17 @@ fn restore_source_focus(_source: usize) -> bool {
 
 fn foreground_source() -> usize {
     #[cfg(target_os = "windows")]
-    { window_manager::get_foreground_window() }
+    {
+        window_manager::get_foreground_window()
+    }
     #[cfg(target_os = "macos")]
-    { window_manager::get_foreground_pid().max(0) as usize }
+    {
+        window_manager::get_foreground_pid().max(0) as usize
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    { 0 }
+    {
+        0
+    }
 }
 
 fn source_is_focused(source: usize) -> bool {
@@ -233,22 +275,30 @@ fn source_is_focused(source: usize) -> bool {
 
 fn capture_source(_app: &AppHandle) -> Option<usize> {
     let source = foreground_source();
-    if source == 0 { return None; }
+    if source == 0 {
+        return None;
+    }
     #[cfg(target_os = "windows")]
     for label in ["main", "settings"] {
-        if _app.get_webview_window(label).and_then(|w| w.hwnd().ok())
-            .is_some_and(|hwnd| hwnd.0 as usize == source) {
+        if _app
+            .get_webview_window(label)
+            .and_then(|w| w.hwnd().ok())
+            .is_some_and(|hwnd| hwnd.0 as usize == source)
+        {
             return None;
         }
     }
     #[cfg(target_os = "macos")]
-    if source == window_manager::own_pid() as usize { return None; }
+    if source == window_manager::own_pid() as usize {
+        return None;
+    }
     Some(source)
 }
 
 fn hide_popup(app: &AppHandle) -> Result<(), String> {
     // Notify on every backend hide, including captures that later fail or are empty.
-    app.emit_to("main", "popup-hiding", ()).map_err(|e| e.to_string())?;
+    app.emit_to("main", "popup-hiding", ())
+        .map_err(|e| e.to_string())?;
     if let Some(win) = app.get_webview_window("main") {
         win.hide().map_err(|e| e.to_string())?;
     }
@@ -258,14 +308,16 @@ fn hide_popup(app: &AppHandle) -> Result<(), String> {
 fn write_clipboard(text: &str) -> Result<(), String> {
     let mut clipboard = arboard::Clipboard::new()
         .map_err(|_| "クリップボードにアクセスできませんでした。".to_string())?;
-    clipboard.set_text(text)
+    clipboard
+        .set_text(text)
         .map_err(|_| "クリップボードを書き換えられませんでした。".to_string())
 }
 
 fn read_clipboard() -> Result<String, String> {
     let mut clipboard = arboard::Clipboard::new()
         .map_err(|_| "クリップボードにアクセスできませんでした。".to_string())?;
-    clipboard.get_text()
+    clipboard
+        .get_text()
         .map_err(|_| "クリップボードのテキストを読み取れませんでした。".to_string())
 }
 
@@ -273,7 +325,9 @@ fn on_shortcut(app: AppHandle) {
     let state = app.state::<AppState>();
     // Ignore repeats while a cut/paste is in progress. A second operation must
     // never change the source window underneath the first one.
-    let Ok(mut pending) = state.selection.try_lock() else { return; };
+    let Ok(mut pending) = state.selection.try_lock() else {
+        return;
+    };
     let (cx, cy) = keyboard::get_cursor_position();
     if pending.current().is_some() {
         // Preserve the outstanding cut until the user replaces or restores it.
@@ -282,7 +336,9 @@ fn on_shortcut(app: AppHandle) {
     }
     let request_id = state.translation_id.fetch_add(1, Ordering::SeqCst) + 1;
     let source = capture_source(&app);
-    if hide_popup(&app).is_err() { return; }
+    if hide_popup(&app).is_err() {
+        return;
+    }
 
     let captured = (|| {
         let source = source.ok_or("元のウィンドウを確認できませんでした。")?;
@@ -322,7 +378,9 @@ fn on_shortcut(app: AppHandle) {
             return;
         }
     };
-    if text.is_empty() { return; }
+    if text.is_empty() {
+        return;
+    }
     const MAX_TEXT_LENGTH: usize = 5000;
     if text.trim().is_empty() || text.len() > MAX_TEXT_LENGTH {
         // Restore only to this capture's source, never a previously stored target.
@@ -334,10 +392,17 @@ fn on_shortcut(app: AppHandle) {
         show_popup(&app, cx, cy);
         return;
     }
-    pending.begin(Selection { request_id, text: text.clone(), source });
-    let _ = app.emit("show-loading", serde_json::json!({
-        "request_id": request_id, "text": text,
-    }));
+    pending.begin(Selection {
+        request_id,
+        text: text.clone(),
+        source,
+    });
+    let _ = app.emit(
+        "show-loading",
+        serde_json::json!({
+            "request_id": request_id, "text": text,
+        }),
+    );
     show_popup(&app, cx, cy);
     drop(pending);
     run_translation(&app, request_id, &text);
@@ -346,10 +411,14 @@ fn on_shortcut(app: AppHandle) {
 #[tauri::command]
 fn restore_original_text(request_id: u64, app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let mut pending = state.selection.try_lock()
+    let mut pending = state
+        .selection
+        .try_lock()
         .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
     // Consume before restoring: duplicate or delayed commands cannot paste again.
-    let Some(selection) = pending.take(request_id) else { return Ok(()); };
+    let Some(selection) = pending.take(request_id) else {
+        return Ok(());
+    };
     state.translation_id.fetch_add(1, Ordering::SeqCst);
     // The frontend has already stopped recording before invoking this command.
     let _ = hide_popup(&app);
@@ -378,9 +447,13 @@ fn restore_original_text(request_id: u64, app: AppHandle) -> Result<(), String> 
 #[tauri::command]
 fn do_paste(text: String, request_id: u64, app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let mut pending = state.selection.try_lock()
+    let mut pending = state
+        .selection
+        .try_lock()
         .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
-    let selection = pending.get(request_id).ok_or("この翻訳はすでに終了しています。")?;
+    let selection = pending
+        .get(request_id)
+        .ok_or("この翻訳はすでに終了しています。")?;
     hide_popup(&app)?;
     if let Err(error) = paste_text(&text, selection.source) {
         // Keep the original bound to its source so Close can still restore it.
@@ -412,14 +485,21 @@ fn paste_text(text: &str, source: usize) -> Result<(), String> {
 #[tauri::command]
 fn retry_translation(request_id: u64, app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let mut pending = state.selection.try_lock()
+    let mut pending = state
+        .selection
+        .try_lock()
         .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
-    pending.get(request_id).ok_or("再試行できる翻訳がありません。")?;
+    pending
+        .get(request_id)
+        .ok_or("再試行できる翻訳がありません。")?;
     let next_id = state.translation_id.fetch_add(1, Ordering::SeqCst) + 1;
     let selection = pending.retry(request_id, next_id).unwrap();
-    let _ = app.emit("show-loading", serde_json::json!({
-        "request_id": next_id, "text": selection.text,
-    }));
+    let _ = app.emit(
+        "show-loading",
+        serde_json::json!({
+            "request_id": next_id, "text": selection.text,
+        }),
+    );
     drop(pending);
     thread::spawn(move || {
         run_translation(&app, next_id, &selection.text);
@@ -449,7 +529,8 @@ fn start_tts(app: &AppHandle, window_label: &str) {
 #[tauri::command]
 async fn play_tts(text: String, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || play_tts_inner(text, app))
-        .await.map_err(|_| "音声の再生を開始できませんでした。".to_string())
+        .await
+        .map_err(|_| "音声の再生を開始できませんでした。".to_string())
 }
 
 fn play_tts_inner(text: String, app: AppHandle) {
@@ -527,7 +608,8 @@ fn stop_tts(app: AppHandle) {
 #[tauri::command]
 async fn preview_tts(voice: String, speed: f64, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || preview_tts_inner(voice, speed, app))
-        .await.map_err(|_| "音声の再生を開始できませんでした。".to_string())
+        .await
+        .map_err(|_| "音声の再生を開始できませんでした。".to_string())
 }
 
 fn preview_tts_inner(voice: String, speed: f64, app: AppHandle) {
@@ -590,13 +672,15 @@ fn get_tts_voices() -> Vec<tts::TtsVoice> {
 #[tauri::command]
 async fn get_config(app: AppHandle) -> Result<SettingsConfig, String> {
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().config_store.settings())
-        .await.map_err(|_| "設定を読み込めませんでした。".to_string())?
+        .await
+        .map_err(|_| "設定を読み込めませんでした。".to_string())?
 }
 
 #[tauri::command]
 async fn save_config(config: SettingsConfig, app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || save_settings(config, app))
-        .await.map_err(|_| "設定を保存できませんでした。".to_string())?
+        .await
+        .map_err(|_| "設定を保存できませんでした。".to_string())?
 }
 
 fn save_settings(settings: SettingsConfig, app: AppHandle) -> Result<(), String> {
@@ -641,12 +725,16 @@ fn open_settings(app: AppHandle) {
         return;
     }
 
-    let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("src/settings.html".into()))
-        .title("設定 — English Input Assistant")
-        .inner_size(500.0, 300.0)
-        .min_inner_size(500.0, 300.0)
-        .resizable(false)
-        .build();
+    let _ = WebviewWindowBuilder::new(
+        &app,
+        "settings",
+        WebviewUrl::App("src/settings.html".into()),
+    )
+    .title("設定 — English Input Assistant")
+    .inner_size(500.0, 300.0)
+    .min_inner_size(500.0, 300.0)
+    .resizable(false)
+    .build();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -686,7 +774,10 @@ pub fn run() {
         ])
         .setup(move |app| {
             // Initialize config store
-            let app_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to get app data dir");
             let config_store = ConfigStore::new(app_data_dir);
             let shortcut_str = config_store.get().shortcut;
             let auto_check_updates = config_store.get().auto_check_updates;
@@ -735,21 +826,25 @@ pub fn run() {
                 tauri::image::Image::new_owned(rgba, width, height)
             };
             #[cfg(not(target_os = "macos"))]
-            let tray_icon = app.default_window_icon().cloned()
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
                 .expect("failed to load tray icon");
 
             let tray_builder = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&tray_menu)
                 .tooltip("English Input Assistant")
-                .on_menu_event(|app: &AppHandle, event: tauri::menu::MenuEvent| match event.id().as_ref() {
-                    "settings" => {
-                        let _ = open_settings(app.clone());
+                .on_menu_event(|app: &AppHandle, event: tauri::menu::MenuEvent| {
+                    match event.id().as_ref() {
+                        "settings" => {
+                            open_settings(app.clone());
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
                     }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
                 });
 
             #[cfg(target_os = "macos")]
@@ -764,7 +859,11 @@ pub fn run() {
                         debug_log!("[rust] Global shortcut registered: {}", shortcut_str);
                     }
                     Err(_e) => {
-                        debug_log!("[rust] Invalid shortcut in config: {} ({})", shortcut_str, _e);
+                        debug_log!(
+                            "[rust] Invalid shortcut in config: {} ({})",
+                            shortcut_str,
+                            _e
+                        );
                     }
                 }
             } else {
