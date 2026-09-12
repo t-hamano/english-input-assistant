@@ -19,7 +19,12 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "check-version": "node scripts/check-version.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx,css}": "biome check --write --no-errors-on-unmatched",
+    "tests/**/*.ts": "biome check --write --no-errors-on-unmatched"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -33,6 +38,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
     "typescript": "~7.0.2",
     "vite": "^8.2.2"
   }

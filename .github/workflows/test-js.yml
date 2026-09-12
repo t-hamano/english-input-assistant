@@ -1,4 +1,4 @@
-name: JS Unit Test
+name: Test JS
 
 on:
   pull_request:
@@ -9,8 +9,9 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'tsconfig.json'
+      - 'biome.json'
       - '.nvmrc'
-      - '.github/workflows/js-unit-test.yml'
+      - '.github/workflows/test-js.yml'
   push:
     branches:
       - main
@@ -21,8 +22,9 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'tsconfig.json'
+      - 'biome.json'
       - '.nvmrc'
-      - '.github/workflows/js-unit-test.yml'
+      - '.github/workflows/test-js.yml'
   workflow_dispatch:
 
 concurrency:
@@ -32,8 +34,8 @@ concurrency:
 permissions: {}
 
 jobs:
-  js-test:
-    name: JS unit tests
+  test-js:
+    name: JS lint and unit tests
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -55,6 +57,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
 
       - name: Type check
         run: pnpm exec tsc --noEmit

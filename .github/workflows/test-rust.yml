@@ -1,16 +1,16 @@
-name: Rust Unit Test
+name: Test Rust
 
 on:
   pull_request:
     paths:
       - 'src-tauri/**'
-      - '.github/workflows/rust-unit-test.yml'
+      - '.github/workflows/test-rust.yml'
   push:
     branches:
       - main
     paths:
       - 'src-tauri/**'
-      - '.github/workflows/rust-unit-test.yml'
+      - '.github/workflows/test-rust.yml'
   workflow_dispatch:
 
 concurrency:
