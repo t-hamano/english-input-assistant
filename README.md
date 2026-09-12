@@ -2,6 +2,17 @@
 
 英文入力を支援する Windows / macOS 向けデスクトップアプリです。選択した日本語または英語を、解説付きで自然な英文に変換します。ブラウザ内のテキストエリアだけでなく、デスクトップ上でテキストをコピー＆ペーストできる場所であればどこでも動作します。
 
+<table>
+  <tr>
+    <th width="50%">設定</th>
+    <th width="50%">翻訳結果</th>
+  </tr>
+  <tr>
+    <td valign="top"><img src="screenshots/settings.png" alt="設定ポップオーバー" width="100%"></td>
+    <td valign="top"><img src="screenshots/translation-result.png" alt="ダミーテキストを用いた翻訳結果ポップオーバー" width="100%"></td>
+  </tr>
+</table>
+
 ## インストール / ダウンロード
 
 [GitHub Releases](https://github.com/t-hamano/english-input-assistant/releases) から最新版を入手してください。
