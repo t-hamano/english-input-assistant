@@ -191,6 +191,7 @@ export function App() {
           <input
             type="text"
             id="shortcut"
+            aria-describedby="shortcut-help"
             ref={shortcutInputRef}
             readOnly
             className="shortcut-input"
@@ -213,6 +214,12 @@ export function App() {
             リセット
           </button>
         </div>
+        <small id="shortcut-help">
+          {navigator.platform.startsWith("Mac")
+            ? "Control・Option・Shift・Command のいずれか1つ以上と、別のキーを組み合わせてください（例：Option+Space）。"
+            : "Ctrl・Alt・Shift・Windows キーのいずれか1つ以上と、別のキーを組み合わせてください（例：Ctrl+Alt+Space）。"}
+          キー単独・Escape は登録できません。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="google-key">Google API キー</label>
