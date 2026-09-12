@@ -1,5 +1,8 @@
 # English Input Assistant
 
+[![Test JS](https://github.com/t-hamano/english-input-assistant/actions/workflows/test-js.yml/badge.svg?branch=main)](https://github.com/t-hamano/english-input-assistant/actions/workflows/test-js.yml)
+[![Test Rust](https://github.com/t-hamano/english-input-assistant/actions/workflows/test-rust.yml/badge.svg?branch=main)](https://github.com/t-hamano/english-input-assistant/actions/workflows/test-rust.yml)
+
 英文入力を支援する Windows / macOS 向けデスクトップアプリです。選択した日本語または英語を、解説付きで自然な英文に変換します。ブラウザ内のテキストエリアだけでなく、デスクトップ上でテキストをコピー＆ペーストできる場所であればどこでも動作します。
 
 <table>
