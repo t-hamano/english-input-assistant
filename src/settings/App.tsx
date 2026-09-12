@@ -1,8 +1,9 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PlayIcon } from "../icons";
+import { type ShortcutKey, shortcutFromKey } from "./shortcut";
 
 interface AppConfig {
   google_api_key: string;
@@ -14,19 +15,6 @@ interface AppConfig {
   tts_speed: number;
   shortcut: string;
 }
-
-const MODIFIER_CODES = new Set([
-  "ControlLeft",
-  "ControlRight",
-  "AltLeft",
-  "AltRight",
-  "ShiftLeft",
-  "ShiftRight",
-  "MetaLeft",
-  "MetaRight",
-  "OSLeft",
-  "OSRight",
-]);
 
 function formatKeyName(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
@@ -70,6 +58,7 @@ export function App() {
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
   const [playing, setPlaying] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const shortcutInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -80,8 +69,30 @@ export function App() {
     setSettings((prev) => prev && { ...prev, [key]: value });
   }, []);
 
+  const recordShortcut = useCallback(
+    (key: ShortcutKey) => {
+      const input = shortcutInputRef.current;
+      // Native global shortcuts may bypass keydown. Accept them only while
+      // this field still has focus, including when an event arrives late.
+      if (!input || document.activeElement !== input) return;
+      if (key.code === "Escape") {
+        input.blur();
+        return;
+      }
+      const shortcut = shortcutFromKey(key);
+      if (!shortcut) return;
+      update("shortcut", shortcut);
+      setError(null);
+      input.blur();
+    },
+    [update],
+  );
+
   useEffect(() => {
     const unlisten = [
+      getCurrentWindow().listen<ShortcutKey>("settings-shortcut-pressed", (e) =>
+        recordShortcut(e.payload),
+      ),
       getCurrentWindow().listen("tts-playing", () => setPlaying(true)),
       getCurrentWindow().listen("tts-done", () => setPlaying(false)),
       getCurrentWindow().listen<string>("tts-error", (e) => setError(e.payload)),
@@ -91,7 +102,7 @@ export function App() {
         u.then((f) => f());
       });
     };
-  }, []);
+  }, [recordShortcut]);
 
   useEffect(() => {
     void getVersion().then(setVersion).catch(console.error);
@@ -164,28 +175,9 @@ export function App() {
       e.preventDefault();
       e.stopPropagation();
 
-      if (e.code === "Escape") {
-        setCapturing(false);
-        e.currentTarget.blur();
-        return;
-      }
-
-      if (MODIFIER_CODES.has(e.code)) return;
-
-      const parts: string[] = [];
-      if (e.ctrlKey) parts.push("Ctrl");
-      if (e.altKey) parts.push("Alt");
-      if (e.shiftKey) parts.push("Shift");
-      if (e.metaKey) parts.push("Meta");
-      if (parts.length === 0) return;
-      parts.push(e.code);
-
-      update("shortcut", parts.join("+"));
-      setError(null);
-      setCapturing(false);
-      e.currentTarget.blur();
+      recordShortcut(e);
     },
-    [update],
+    [recordShortcut],
   );
 
   const handleCancel = useCallback(async () => {
@@ -214,6 +206,7 @@ export function App() {
           <input
             type="text"
             id="shortcut"
+            ref={shortcutInputRef}
             readOnly
             className="shortcut-input"
             value={capturing ? "キーを押してください..." : formatShortcut(settings.shortcut)}

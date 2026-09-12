@@ -23,7 +23,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 
 use config::{ConfigStore, SettingsConfig};
 use llm::TranslationResult;
@@ -322,6 +322,13 @@ fn read_clipboard() -> Result<String, String> {
 }
 
 fn on_shortcut(app: AppHandle) {
+    // Focus can change after the native handler queues this worker.
+    if app
+        .get_webview_window("settings")
+        .is_some_and(|window| window.is_focused().unwrap_or(false))
+    {
+        return;
+    }
     let state = app.state::<AppState>();
     // Ignore repeats while a cut/paste is in progress. A second operation must
     // never change the source window underneath the first one.
@@ -707,8 +714,27 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, _shortcut, event| {
+                .with_handler(move |app, shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        if let Some(settings) = app
+                            .get_webview_window("settings")
+                            .filter(|window| window.is_focused().unwrap_or(false))
+                        {
+                            // Windows may consume a registered chord before the
+                            // webview receives keydown. Forward it for recording;
+                            // never start translation from the settings window.
+                            let _ = settings.emit(
+                                "settings-shortcut-pressed",
+                                serde_json::json!({
+                                    "code": shortcut.key.to_string(),
+                                    "ctrlKey": shortcut.mods.contains(Modifiers::CONTROL),
+                                    "altKey": shortcut.mods.contains(Modifiers::ALT),
+                                    "shiftKey": shortcut.mods.contains(Modifiers::SHIFT),
+                                    "metaKey": shortcut.mods.contains(Modifiers::SUPER),
+                                }),
+                            );
+                            return;
+                        }
                         let app = app.clone();
                         thread::spawn(move || {
                             on_shortcut(app);
