@@ -191,6 +191,7 @@ export function App() {
           <input
             type="text"
             id="shortcut"
+            aria-describedby="shortcut-help"
             ref={shortcutInputRef}
             readOnly
             className="shortcut-input"
@@ -213,22 +214,32 @@ export function App() {
             リセット
           </button>
         </div>
+        <small id="shortcut-help">
+          {navigator.platform.startsWith("Mac")
+            ? "Control・Option・Shift・Command のいずれか1つ以上と、別のキーを組み合わせてください（例：Option+Space）。"
+            : "Ctrl・Alt・Shift・Windows キーのいずれか1つ以上と、別のキーを組み合わせてください（例：Ctrl+Alt+Space）。"}
+          キー単独・Escape は登録できません。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="google-key">Google API キー</label>
         <input
           type="password"
           id="google-key"
+          aria-describedby="google-key-help"
           placeholder="AIza..."
           value={settings.google_api_key}
           onChange={(e) => update("google_api_key", e.target.value)}
         />
-        <small>この端末に安全に保存されます。削除するには空欄にして保存してください。</small>
+        <small id="google-key-help">
+          この端末に安全に保存されます。削除するには空欄にして保存してください。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="gemini-model">Gemini モデル</label>
         <select
           id="gemini-model"
+          aria-describedby="gemini-model-help"
           value={settings.gemini_model}
           onChange={(e) => update("gemini_model", e.target.value)}
         >
@@ -238,7 +249,9 @@ export function App() {
             </option>
           ))}
         </select>
-        <small>Flash は解説の精度が高いが低速、Flash-Lite は低コスト・高速で短文向けです。</small>
+        <small id="gemini-model-help">
+          Flash は解説の精度が高いが低速、Flash-Lite は低コスト・高速で短文向けです。
+        </small>
       </div>
       <div className="field">
         <label htmlFor="additional-prompt">追加プロンプト</label>
@@ -255,6 +268,7 @@ export function App() {
         <div className="voice">
           <select
             id="tts-voice"
+            aria-describedby="tts-voice-help"
             value={settings.tts_voice}
             onChange={(e) => update("tts_voice", e.target.value)}
           >
@@ -279,7 +293,7 @@ export function App() {
             <span>{playing ? "停止" : "プレビュー"}</span>
           </button>
         </div>
-        <small>
+        <small id="tts-voice-help">
           Standard は低コストで無料枠が大きめ、Chirp 3 HD
           はより自然で高品質ですが単価が高く無料枠は小さめです。
         </small>
@@ -322,18 +336,20 @@ export function App() {
           <button
             type="button"
             onClick={handleCheckForUpdates}
+            aria-describedby={IS_DEV || updateStatus ? "update-status" : undefined}
             disabled={checkingUpdates || IS_DEV}
           >
             {checkingUpdates ? "更新中..." : "アップデートを確認"}
           </button>
         </div>
         {IS_DEV ? (
-          <p className="update-status" role="status">
+          <p id="update-status" className="update-status" role="status">
             {DEV_UPDATE_MESSAGE}
           </p>
         ) : (
           updateStatus && (
             <p
+              id="update-status"
               className={updateError ? "error" : "update-status"}
               role={updateError ? "alert" : "status"}
             >
