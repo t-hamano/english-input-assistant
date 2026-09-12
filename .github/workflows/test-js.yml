@@ -2,29 +2,9 @@ name: Test JS
 
 on:
   pull_request:
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'index.html'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - '.nvmrc'
-      - '.github/workflows/test-js.yml'
   push:
     branches:
       - main
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'index.html'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - '.nvmrc'
-      - '.github/workflows/test-js.yml'
   workflow_dispatch:
 
 concurrency:
