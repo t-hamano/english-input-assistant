@@ -13,6 +13,12 @@
   </tr>
 </table>
 
+## 動作環境
+
+- Windows 10 / 11（64bit）
+- Apple Silicon 搭載の Mac（Intel Mac は非対応）
+- 翻訳・読み上げに使用するため、インターネット接続と Google の API キーが必要です（[「API キー」](#api-キー)を参照）。
+
 ## インストール / ダウンロード
 
 [GitHub Releases](https://github.com/t-hamano/english-input-assistant/releases) から最新版を入手してください。
@@ -23,15 +29,31 @@
 いずれもコード署名をしていないため、初回起動時に OS の警告が表示されます。
 
 - Windows: SmartScreen の画面で「詳細情報」→「実行」を選択します。
-- macOS: アプリを右クリックして「開く」を選択します。開けない場合はターミナルで `xattr -dr com.apple.quarantine "/Applications/English Input Assistant.app"` を実行します。
+- macOS: 以下の初回設定が必要です。
 
 インストール版は、以降のバージョンを GitHub Releases から自動で取得・更新します。
 
-## 動作環境
+### macOS の初回設定
 
-- Windows 10 / 11（64bit）
-- Apple Silicon 搭載の Mac（Intel Mac は非対応）
-- 翻訳・読み上げに使用するため、インターネット接続と Google の API キーが必要です（[「API キー」](#api-キー)を参照）。
+#### 隔離属性の解除
+
+`.dmg` を開き、アプリを「アプリケーション」フォルダにコピーしてください。現在の配布版を起動するには、ターミナルで次のコマンドを実行し、ダウンロード時の隔離属性を解除する必要があります。解除していない場合、「壊れているため開けません」（damaged and can't be opened）と表示されます。
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/English Input Assistant.app"
+```
+
+このコマンドは、上記の GitHub Releases から取得したアプリに対して実行してください。
+
+#### アクセシビリティの許可
+
+ショートカットによるテキストの取得・置き換えには、macOS のアクセシビリティ権限が必要です。
+
+1. **システム設定 → プライバシーとセキュリティ → アクセシビリティ** を開きます。
+2. **English Input Assistant** をオンにします。一覧にない場合は「＋」から `/Applications/English Input Assistant.app` を追加してください。
+3. 起動中の場合はメニューバーのアプリアイコンから終了し、起動し直してください。
+
+許可していない場合、ショートカット実行時にアクセス許可のポップアップが表示され、アプリには「キーボード操作を開始できませんでした。」と表示されます。
 
 ## 使い方
 
