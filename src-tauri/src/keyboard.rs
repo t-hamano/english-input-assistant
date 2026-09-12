@@ -16,7 +16,12 @@ fn new_enigo() -> Option<Enigo> {
 }
 
 fn send_action(key: char) -> Result<(), String> {
-    let mut enigo = new_enigo().ok_or("キーボード操作を開始できませんでした。")?;
+    #[cfg(target_os = "macos")]
+    let init_error = "キーボード操作を開始できませんでした。システム設定 → プライバシーとセキュリティ → アクセシビリティで English Input Assistant を許可し、アプリを終了して起動し直してください。";
+    #[cfg(not(target_os = "macos"))]
+    let init_error = "キーボード操作を開始できませんでした。";
+
+    let mut enigo = new_enigo().ok_or(init_error)?;
     let result = enigo
         .key(ACTION_MODIFIER, Press)
         .and_then(|_| enigo.key(Key::Unicode(key), Click));
