@@ -31,7 +31,10 @@ export const initialTranslationState: TranslationState = {
   view: { type: "loading" },
 };
 
-export function translationReducer(state: TranslationState, action: TranslationAction): TranslationState {
+export function translationReducer(
+  state: TranslationState,
+  action: TranslationAction,
+): TranslationState {
   switch (action.type) {
     case "start":
       if (action.request_id <= state.latestRequestId) return state;
@@ -43,14 +46,18 @@ export function translationReducer(state: TranslationState, action: TranslationA
       };
     case "update":
       if (action.request_id !== state.requestId) return state;
-      return { ...state, view: { type: "result", result: action.result, complete: action.complete } };
+      return {
+        ...state,
+        view: { type: "result", result: action.result, complete: action.complete },
+      };
     case "error":
       if (action.request_id !== state.requestId) return state;
       return {
         ...state,
-        view: state.view.type === "result"
-          ? { ...state.view, complete: true, error: action.message }
-          : { type: "error", message: action.message },
+        view:
+          state.view.type === "result"
+            ? { ...state.view, complete: true, error: action.message }
+            : { type: "error", message: action.message },
       };
     case "preflight-error":
       return { ...state, requestId: null, view: { type: "error", message: action.message } };

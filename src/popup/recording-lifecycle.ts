@@ -9,18 +9,24 @@ export function watchRecordingLifecycle(
   let disposed = false;
   const cleanups: (() => void)[] = [];
   const register = (subscription: Promise<() => void>) => {
-    void subscription.then((unlisten) => {
-      if (disposed) unlisten();
-      else cleanups.push(unlisten);
-    }).catch(() => resetRecording());
+    void subscription
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else cleanups.push(unlisten);
+      })
+      .catch(() => resetRecording());
   };
   register(popup.listen("popup-hiding", resetRecording));
-  register(popup.onFocusChanged(({ payload: focused }) => {
-    if (!focused) resetRecording();
-  }));
+  register(
+    popup.onFocusChanged(({ payload: focused }) => {
+      if (!focused) resetRecording();
+    }),
+  );
   return () => {
     disposed = true;
     resetRecording();
-    cleanups.forEach((unlisten) => unlisten());
+    cleanups.forEach((unlisten) => {
+      unlisten();
+    });
   };
 }

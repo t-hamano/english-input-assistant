@@ -9,11 +9,14 @@ function popupFixture() {
   const listeners = new Map<string, (event: { payload: boolean }) => void>();
   const subscribe = async (event: string, callback: (event: { payload: boolean }) => void) => {
     listeners.set(event, callback);
-    return () => { listeners.delete(event); };
+    return () => {
+      listeners.delete(event);
+    };
   };
   const popup = {
     listen: subscribe,
-    onFocusChanged: (callback: (event: { payload: boolean }) => void) => subscribe("focus", callback),
+    onFocusChanged: (callback: (event: { payload: boolean }) => void) =>
+      subscribe("focus", callback),
   } as unknown as LifecyclePopup;
   return { popup, listeners };
 }
@@ -27,6 +30,7 @@ test("backend hide stops recording even when capture emits no loading/error even
     pendingPermissionRequest++;
   });
   await Promise.resolve();
+  // biome-ignore lint/style/noNonNullAssertion: registered synchronously above by popupFixture
   listeners.get("popup-hiding")!({ payload: false });
   assert.equal(microphoneActive, false);
   assert.equal(pendingPermissionRequest, 2);
@@ -37,10 +41,14 @@ test("backend hide stops recording even when capture emits no loading/error even
 test("losing focus stops the microphone without a translation event", async () => {
   const { popup, listeners } = popupFixture();
   let stops = 0;
-  const dispose = watchRecordingLifecycle(popup, () => { stops++; });
+  const dispose = watchRecordingLifecycle(popup, () => {
+    stops++;
+  });
   await Promise.resolve();
+  // biome-ignore lint/style/noNonNullAssertion: registered synchronously above by popupFixture
   listeners.get("focus")!({ payload: true });
   assert.equal(stops, 0);
+  // biome-ignore lint/style/noNonNullAssertion: registered synchronously above by popupFixture
   listeners.get("focus")!({ payload: false });
   assert.equal(stops, 1);
   dispose();
@@ -49,7 +57,9 @@ test("losing focus stops the microphone without a translation event", async () =
 test("subscriptions completing after unmount are still removed", async () => {
   const { popup, listeners } = popupFixture();
   let stops = 0;
-  const dispose = watchRecordingLifecycle(popup, () => { stops++; });
+  const dispose = watchRecordingLifecycle(popup, () => {
+    stops++;
+  });
   dispose();
   await Promise.resolve();
   assert.equal(stops, 1);

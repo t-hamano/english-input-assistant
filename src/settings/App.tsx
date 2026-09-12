@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useState, useCallback } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 interface AppConfig {
   google_api_key: string;
@@ -15,17 +15,22 @@ interface AppConfig {
 }
 
 const MODIFIER_CODES = new Set([
-  "ControlLeft", "ControlRight",
-  "AltLeft", "AltRight",
-  "ShiftLeft", "ShiftRight",
-  "MetaLeft", "MetaRight",
-  "OSLeft", "OSRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "MetaLeft",
+  "MetaRight",
+  "OSLeft",
+  "OSRight",
 ]);
 
 function formatKeyName(code: string): string {
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
-  if (code.startsWith("Numpad")) return "Num" + code.slice(6);
+  if (code.startsWith("Numpad")) return `Num${code.slice(6)}`;
   if (code.startsWith("Arrow")) return code.slice(5);
   return code;
 }
@@ -33,6 +38,7 @@ function formatKeyName(code: string): string {
 function formatShortcut(s: string): string {
   if (!s) return "";
   const parts = s.split("+");
+  // biome-ignore lint/style/noNonNullAssertion: split() on a non-empty string always yields at least one part
   const last = parts.pop()!;
   return [...parts, formatKeyName(last)].join("+");
 }
@@ -69,12 +75,9 @@ export function App() {
   const [updateStatus, setUpdateStatus] = useState("");
   const [updateError, setUpdateError] = useState(false);
 
-  const update = useCallback(
-    <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
-      setSettings((prev) => prev && ({ ...prev, [key]: value }));
-    },
-    []
-  );
+  const update = useCallback(<K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
+    setSettings((prev) => prev && { ...prev, [key]: value });
+  }, []);
 
   useEffect(() => {
     const unlisten = [
@@ -83,7 +86,9 @@ export function App() {
       getCurrentWindow().listen<string>("tts-error", (e) => setError(e.payload)),
     ];
     return () => {
-      unlisten.forEach((u) => u.then((f) => f()));
+      unlisten.forEach((u) => {
+        u.then((f) => f());
+      });
     };
   }, []);
 
@@ -93,15 +98,18 @@ export function App() {
       invoke<GeminiModel[]>("get_gemini_models"),
       invoke<TtsVoice[]>("get_tts_voices"),
       invoke<AppConfig>("get_config"),
-    ]).then(([models, voices, config]) => {
-      setGeminiModels(models);
-      setTtsVoices(voices);
-      setSettings(config);
-    }).catch((e) => {
-      setError(String(e));
-    });
+    ])
+      .then(([models, voices, config]) => {
+        setGeminiModels(models);
+        setTtsVoices(voices);
+        setSettings(config);
+      })
+      .catch((e) => {
+        setError(String(e));
+      });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: updateStatus isn't read here, but re-measures scrollHeight after its text changes the layout
   useLayoutEffect(() => {
     if (!settings && !error) return;
     const height = Math.max(300, document.body.scrollHeight);
@@ -117,7 +125,7 @@ export function App() {
       if (progress.event === "installing") {
         setUpdateStatus("アップデートをインストール中。アプリが再起動します...");
       } else if (progress.total) {
-        const percent = Math.min(100, Math.round(progress.received / progress.total * 100));
+        const percent = Math.min(100, Math.round((progress.received / progress.total) * 100));
         setUpdateStatus(`アップデートをダウンロード中... ${percent}%`);
       } else {
         setUpdateStatus("アップデートをダウンロード中...");
@@ -176,7 +184,7 @@ export function App() {
       setCapturing(false);
       e.currentTarget.blur();
     },
-    [update]
+    [update],
   );
 
   const handleCancel = useCallback(async () => {
@@ -186,7 +194,13 @@ export function App() {
   if (!settings) {
     return (
       <div className="content">
-        {error ? <div className="error" role="alert">{error}</div> : <p>設定を読み込み中...</p>}
+        {error ? (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        ) : (
+          <p>設定を読み込み中...</p>
+        )}
       </div>
     );
   }
@@ -243,9 +257,7 @@ export function App() {
             </option>
           ))}
         </select>
-        <small>
-          Flash は解説の精度が高いが低速、Flash-Lite は低コスト・高速で短文向けです。
-        </small>
+        <small>Flash は解説の精度が高いが低速、Flash-Lite は低コスト・高速で短文向けです。</small>
       </div>
       <div className="field">
         <label htmlFor="additional-prompt">追加プロンプト</label>
@@ -282,14 +294,15 @@ export function App() {
                 : invoke("preview_tts", { voice: settings.tts_voice, speed: settings.tts_speed })
             }
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
               <path d="M232-81q57 0 99-31t62-82q20-51 39.5-79.5T506-345q66-53 95-113t29-146q0-120-76-196.5T358-877q-118 0-195.5 73.5T80-616h60q5-88 65.5-144.5T358-817q90 0 151 61.5T570-604q0 72-28 124.5T449-378q-39 29-62.5 63T342-231q-17 42-44.5 66T232-141q-35 0-60.5-24T141-224H81q5 60 48 101.5T232-81Zm192-457q27-27 27-66t-27-67q-27-28-66-28t-67 28q-28 28-28 67t28 66q28 27 67 27t66-27Zm323 151-47-46q20-39 30-82.5t10-90.5q0-47-10-90.5T701-779l46-46q26 49 39.5 103.5T800-607q0 60-13.5 115T747-387Zm117 114-45-43q38-63 59.5-136T900-604q0-80-21.5-153.5T818-894l45-44q47 72 72 156.5T960-604q0 92-25 175.5T864-273Z" />
             </svg>
             <span>{playing ? "停止" : "プレビュー"}</span>
           </button>
         </div>
         <small>
-          Standard は低コストで無料枠が大きめ、Chirp 3 HD はより自然で高品質ですが単価が高く無料枠は小さめです。
+          Standard は低コストで無料枠が大きめ、Chirp 3 HD
+          はより自然で高品質ですが単価が高く無料枠は小さめです。
         </small>
       </div>
       <div className="field">
@@ -327,7 +340,11 @@ export function App() {
       <div className="field updates">
         <div className="updates-heading">
           <span>バージョン {version || "..."}</span>
-          <button type="button" onClick={handleCheckForUpdates} disabled={checkingUpdates || IS_DEV}>
+          <button
+            type="button"
+            onClick={handleCheckForUpdates}
+            disabled={checkingUpdates || IS_DEV}
+          >
             {checkingUpdates ? "更新中..." : "アップデートを確認"}
           </button>
         </div>
@@ -335,18 +352,23 @@ export function App() {
           <p className="update-status" role="status">
             {DEV_UPDATE_MESSAGE}
           </p>
-        ) : updateStatus && (
-          <p className={updateError ? "error" : "update-status"} role={updateError ? "alert" : "status"}>
-            {updateStatus}
-          </p>
+        ) : (
+          updateStatus && (
+            <p
+              className={updateError ? "error" : "update-status"}
+              role={updateError ? "alert" : "status"}
+            >
+              {updateStatus}
+            </p>
+          )
         )}
       </div>
       {error && <div className="error">{error}</div>}
       <div className="buttons">
-        <button className="btn-primary" onClick={handleSave}>
+        <button type="button" className="btn-primary" onClick={handleSave}>
           保存
         </button>
-        <button onClick={handleCancel}>
+        <button type="button" onClick={handleCancel}>
           キャンセル
         </button>
       </div>

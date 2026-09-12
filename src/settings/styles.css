@@ -51,9 +51,9 @@ small {
   gap: 8px;
 }
 
-.shortcut-input {
+input.shortcut-input {
   cursor: pointer;
-  font-family: monospace!important;
+  font-family: monospace;
 }
 
 .error {
