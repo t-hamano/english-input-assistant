@@ -3,7 +3,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PlayIcon } from "../icons";
-import { type ShortcutKey, shortcutFromKey } from "./shortcut";
+import { formatShortcut, type ShortcutKey, shortcutFromKey } from "./shortcut";
 
 interface AppConfig {
   google_api_key: string;
@@ -14,22 +14,6 @@ interface AppConfig {
   tts_voice: string;
   tts_speed: number;
   shortcut: string;
-}
-
-function formatKeyName(code: string): string {
-  if (code.startsWith("Key")) return code.slice(3);
-  if (code.startsWith("Digit")) return code.slice(5);
-  if (code.startsWith("Numpad")) return `Num${code.slice(6)}`;
-  if (code.startsWith("Arrow")) return code.slice(5);
-  return code;
-}
-
-function formatShortcut(s: string): string {
-  if (!s) return "";
-  const parts = s.split("+");
-  // biome-ignore lint/style/noNonNullAssertion: split() on a non-empty string always yields at least one part
-  const last = parts.pop()!;
-  return [...parts, formatKeyName(last)].join("+");
 }
 
 interface GeminiModel {
@@ -50,6 +34,7 @@ type UpdateProgress =
   | { event: "installing" };
 
 const IS_DEV = import.meta.env.DEV;
+const IS_MAC = navigator.platform.startsWith("Mac");
 const DEV_UPDATE_MESSAGE = "アップデートはインストール済みのリリースビルドでのみ利用できます。";
 
 export function App() {
@@ -209,7 +194,9 @@ export function App() {
             ref={shortcutInputRef}
             readOnly
             className="shortcut-input"
-            value={capturing ? "キーを押してください..." : formatShortcut(settings.shortcut)}
+            value={
+              capturing ? "キーを押してください..." : formatShortcut(settings.shortcut, IS_MAC)
+            }
             placeholder="クリックして記録"
             onFocus={() => setCapturing(true)}
             onBlur={() => setCapturing(false)}
