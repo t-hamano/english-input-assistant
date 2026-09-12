@@ -1,0 +1,49 @@
+{
+  "name": "english-input-assistant",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "version": "0.1.0",
+  "description": "A desktop app that turns selected Japanese or English text into natural English using Google Gemini.",
+  "author": "Aki Hamano",
+  "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/t-hamano/english-input-assistant.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "node --test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "lint:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "lint:rust:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "check-version": "node scripts/check-version.mjs",
+    "tauri": "tauri",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx,css}": "biome check --write --no-errors-on-unmatched",
+    "tests/**/*.ts": "biome check --write --no-errors-on-unmatched",
+    "src-tauri/**/*.rs": "rustfmt --edition 2021"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.2"
+  }
+}
