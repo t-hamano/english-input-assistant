@@ -1,6 +1,6 @@
 [package]
 name = "english-input-assistant"
-version = "0.1.0"
+version = "0.1.1"
 description = "A desktop app that turns selected Japanese or English text into natural English using Google Gemini."
 authors = ["Aki Hamano"]
 license = "GPL-2.0-or-later"
