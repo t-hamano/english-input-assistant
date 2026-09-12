@@ -15,6 +15,19 @@ fn new_enigo() -> Option<Enigo> {
     Enigo::new(&Settings::default()).ok()
 }
 
+// macOS input-source APIs used by Enigo's Unicode key mapping require the
+// main queue. Keep Enigo creation, key events, and cleanup on that queue.
+fn on_input_thread<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    #[cfg(target_os = "macos")]
+    if objc2::MainThreadMarker::new().is_none() {
+        let mut result = None;
+        dispatch2::DispatchQueue::main().exec_sync(|| result = Some(work()));
+        return result.expect("main queue completed synchronously");
+    }
+    // Do not synchronously dispatch to the main queue from itself.
+    work()
+}
+
 fn send_action(key: char) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let init_error = "キーボード操作を開始できませんでした。システム設定 → プライバシーとセキュリティ → アクセシビリティで English Input Assistant を許可し、アプリを終了して起動し直してください。";
@@ -33,23 +46,27 @@ fn send_action(key: char) -> Result<(), String> {
 }
 
 pub fn send_cut() -> Result<(), String> {
-    send_action('x')
+    on_input_thread(|| send_action('x'))
 }
 
 pub fn send_paste() -> Result<(), String> {
-    send_action('v')
+    on_input_thread(|| send_action('v'))
 }
 
 pub fn release_modifiers() {
-    if let Some(mut enigo) = new_enigo() {
-        for key in [Key::Control, Key::Alt, Key::Shift, Key::Meta] {
-            let _ = enigo.key(key, Release);
+    on_input_thread(|| {
+        if let Some(mut enigo) = new_enigo() {
+            for key in [Key::Control, Key::Alt, Key::Shift, Key::Meta] {
+                let _ = enigo.key(key, Release);
+            }
         }
-    }
+    });
 }
 
 pub fn get_cursor_position() -> (i32, i32) {
-    new_enigo()
-        .and_then(|e| e.location().ok())
-        .unwrap_or((0, 0))
+    on_input_thread(|| {
+        new_enigo()
+            .and_then(|e| e.location().ok())
+            .unwrap_or((0, 0))
+    })
 }
