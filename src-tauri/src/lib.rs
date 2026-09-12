@@ -695,7 +695,7 @@ fn open_settings(app: AppHandle) {
         return;
     }
 
-    let _ = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         &app,
         "settings",
         WebviewUrl::App("src/settings.html".into()),
@@ -703,8 +703,13 @@ fn open_settings(app: AppHandle) {
     .title("設定 — English Input Assistant")
     .inner_size(500.0, 300.0)
     .min_inner_size(500.0, 300.0)
-    .resizable(false)
-    .build();
+    .resizable(false);
+    // Tauri's macOS Visible style enables FullSizeContentView, so setSize's
+    // requested height includes the title bar while the DOM viewport does not.
+    // Transparent keeps the title bar outside the content area.
+    #[cfg(target_os = "macos")]
+    let builder = builder.title_bar_style(tauri::TitleBarStyle::Transparent);
+    let _ = builder.build();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
