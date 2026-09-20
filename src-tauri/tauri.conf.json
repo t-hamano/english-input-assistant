@@ -42,6 +42,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist"
+    },
     "resources": ["icons/tray-icon-mac.png"]
   },
   "plugins": {
