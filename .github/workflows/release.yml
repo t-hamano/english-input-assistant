@@ -93,6 +93,7 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           includeUpdaterJson: true
+          uploadUpdaterSignatures: false
           tauriScript: pnpm tauri
           args: --target ${{ matrix.rust-target }}
 
