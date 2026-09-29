@@ -13,11 +13,13 @@ export interface TranslationState {
   requestId: number | null;
   latestRequestId: number;
   originalText: string;
+  // `false` when the text could only be copied, so it is explained instead of replaced.
+  isEditable: boolean;
   view: ViewState;
 }
 
 export type TranslationAction =
-  | { type: "start"; request_id: number; text: string }
+  | { type: "start"; request_id: number; text: string; is_editable: boolean }
   | { type: "update"; request_id: number; result: TranslationResult; complete: boolean }
   | { type: "error"; request_id: number; message: string }
   | { type: "preflight-error"; message: string }
@@ -28,6 +30,7 @@ export const initialTranslationState: TranslationState = {
   requestId: null,
   latestRequestId: 0,
   originalText: "",
+  isEditable: true,
   view: { type: "loading" },
 };
 
@@ -42,6 +45,7 @@ export function translationReducer(
         requestId: action.request_id,
         latestRequestId: action.request_id,
         originalText: action.text,
+        isEditable: action.is_editable,
         view: { type: "loading" },
       };
     case "update":

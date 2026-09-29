@@ -26,8 +26,8 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 
 use config::{ConfigStore, SettingsConfig};
-use llm::{Refinement, TranslationResult};
-use selection::{focus_matches, PendingSelection, Selection};
+use llm::{Mode, Refinement, TranslationResult};
+use selection::{focus_matches, Captured, PendingSelection, Selection};
 use tts::{AudioCache, StopSignal};
 
 /// State shared between shortcut handler and commands.
@@ -42,9 +42,11 @@ struct AppState {
 }
 
 /// Call LLM with automatic retry (up to 3 attempts).
+#[allow(clippy::too_many_arguments)]
 fn translate_with_retry(
     app: &AppHandle,
     request_id: u64,
+    mode: Mode,
     input: &str,
     api_key: &str,
     model: &str,
@@ -67,6 +69,7 @@ fn translate_with_retry(
         match llm::translate(
             api_key,
             model,
+            mode,
             input,
             additional_prompt,
             refinement,
@@ -131,7 +134,13 @@ fn emit_translation_error(app: &AppHandle, request_id: u64, message: impl Into<S
     }
 }
 
-fn run_translation(app: &AppHandle, request_id: u64, input: &str, refinement: Option<&Refinement>) {
+fn run_translation(
+    app: &AppHandle,
+    request_id: u64,
+    mode: Mode,
+    input: &str,
+    refinement: Option<&Refinement>,
+) {
     let (api_key, model, additional_prompt) = match get_llm_config(app) {
         Ok(config) => config,
         Err(message) => {
@@ -150,6 +159,7 @@ fn run_translation(app: &AppHandle, request_id: u64, input: &str, refinement: Op
     match translate_with_retry(
         app,
         request_id,
+        mode,
         input,
         &api_key,
         &model,
@@ -346,6 +356,7 @@ fn on_shortcut(app: AppHandle) {
         return;
     };
     let (cx, cy) = keyboard::get_cursor_position();
+    pending.discard_read_only();
     if pending.current().is_some() {
         // Preserve the outstanding cut until the user replaces or restores it.
         show_popup(&app, cx, cy);
@@ -365,7 +376,13 @@ fn on_shortcut(app: AppHandle) {
         if !restore_source_focus(source) {
             return Err("元のウィンドウにフォーカスを戻せませんでした。".to_string());
         }
-        let text = selection::capture(
+        let send_to_source = |send: fn() -> Result<(), String>| {
+            if !source_is_focused(source) {
+                return Err("元のウィンドウのフォーカスが変わりました。".to_string());
+            }
+            send()
+        };
+        let captured = selection::capture(
             || {
                 write_clipboard("")?;
                 // Confirm the clear succeeded before allowing a cut or later read.
@@ -374,20 +391,16 @@ fn on_shortcut(app: AppHandle) {
                 }
                 Ok(())
             },
-            || {
-                if !source_is_focused(source) {
-                    return Err("元のウィンドウのフォーカスが変わりました。".to_string());
-                }
-                keyboard::send_cut()
-            },
+            || send_to_source(keyboard::send_cut),
+            || send_to_source(keyboard::send_copy),
             || {
                 thread::sleep(Duration::from_millis(200));
                 read_clipboard()
             },
         )?;
-        Ok((source, text))
+        Ok((source, captured))
     })();
-    let (source, text) = match captured {
+    let (source, Captured { text, is_editable }) = match captured {
         Ok(captured) => captured,
         Err(message) => {
             let _ = app.emit("show-error", message);
@@ -401,7 +414,13 @@ fn on_shortcut(app: AppHandle) {
     const MAX_TEXT_LENGTH: usize = 5000;
     if text.trim().is_empty() || text.len() > MAX_TEXT_LENGTH {
         // Restore only to this capture's source, never a previously stored target.
-        let message = match paste_text(&text, source) {
+        // Copied text was never removed, so there is nothing to restore.
+        let restored = if is_editable {
+            paste_text(&text, source)
+        } else {
+            Ok(())
+        };
+        let message = match restored {
             Ok(()) => "テキストが空白のみ、または長すぎます（最大 5000 バイト）。短いテキストを選択してください。".to_string(),
             Err(error) => format!("{error} 原文はクリップボードから手動で復元してください。"),
         };
@@ -413,16 +432,26 @@ fn on_shortcut(app: AppHandle) {
         request_id,
         text: text.clone(),
         source,
+        is_editable,
     });
     let _ = app.emit(
         "show-loading",
         serde_json::json!({
-            "request_id": request_id, "text": text,
+            "request_id": request_id, "text": text, "is_editable": is_editable,
         }),
     );
     show_popup(&app, cx, cy);
     drop(pending);
-    run_translation(&app, request_id, &text, None);
+    run_translation(&app, request_id, mode_for(is_editable), &text, None);
+}
+
+/// Text that cannot be replaced is translated into Japanese and explained instead.
+fn mode_for(is_editable: bool) -> Mode {
+    if is_editable {
+        Mode::Rewrite
+    } else {
+        Mode::Explain
+    }
 }
 
 #[tauri::command]
@@ -439,6 +468,10 @@ fn restore_original_text(request_id: u64, app: AppHandle) -> Result<(), String> 
     state.translation_id.fetch_add(1, Ordering::SeqCst);
     // The frontend has already stopped recording before invoking this command.
     let _ = hide_popup(&app);
+    if !selection.is_editable {
+        // Copied text is still in place.
+        return Ok(());
+    }
     if let Err(error) = paste_text(&selection.text, selection.source) {
         let message = match write_clipboard(&selection.text) {
             Ok(()) => format!("{error} 原文をクリップボードにコピーしました。貼り付け先を確認して手動で復元してください。"),
@@ -471,6 +504,9 @@ fn do_paste(text: String, request_id: u64, app: AppHandle) -> Result<(), String>
     let selection = pending
         .get(request_id)
         .ok_or("この翻訳はすでに終了しています。")?;
+    if !selection.is_editable {
+        return Err("このテキストは置き換えできません。".into());
+    }
     hide_popup(&app)?;
     if let Err(error) = paste_text(&text, selection.source) {
         // Keep the original bound to its source so Close can still restore it.
@@ -538,12 +574,18 @@ fn restart_translation(
     let _ = app.emit(
         "show-loading",
         serde_json::json!({
-            "request_id": next_id, "text": selection.text,
+            "request_id": next_id, "text": selection.text, "is_editable": selection.is_editable,
         }),
     );
     drop(pending);
     thread::spawn(move || {
-        run_translation(&app, next_id, &selection.text, refinement.as_ref());
+        run_translation(
+            &app,
+            next_id,
+            mode_for(selection.is_editable),
+            &selection.text,
+            refinement.as_ref(),
+        );
     });
     Ok(())
 }

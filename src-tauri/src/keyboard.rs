@@ -49,6 +49,10 @@ pub fn send_cut() -> Result<(), String> {
     on_input_thread(|| send_action('x'))
 }
 
+pub fn send_copy() -> Result<(), String> {
+    on_input_thread(|| send_action('c'))
+}
+
 pub fn send_paste() -> Result<(), String> {
     on_input_thread(|| send_action('v'))
 }

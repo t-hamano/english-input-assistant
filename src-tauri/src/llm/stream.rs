@@ -5,6 +5,8 @@ use std::io::BufRead;
 
 #[derive(Deserialize)]
 struct TranslationPrefix {
+    // Explain mode never outputs this field.
+    #[serde(default)]
     source_is_english: bool,
     translated: String,
 }
@@ -162,6 +164,13 @@ mod tests {
             let error = read_response(std::io::Cursor::new(input), |_| {}, || true).unwrap_err();
             assert!(!error.contains("dummy-secret-api-key"));
         }
+    }
+
+    #[test]
+    fn explanation_without_source_language_is_previewed() {
+        let preview = translation_prefix(r#"{"translated": "こんにちは", "explan"#).unwrap();
+        assert_eq!(preview.translated, "こんにちは");
+        assert!(!preview.source_is_english);
     }
 
     #[test]

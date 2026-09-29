@@ -4,6 +4,17 @@ mod stream;
 
 const SYSTEM_PROMPT: &str = r#"英語ライティングアシスタント。入力を自然な英語に変換せよ。日本語入力→英訳、英語入力→より自然に改善。JSON出力: {"source_is_english":bool,"translated":"自然な英文","explanation":"必ず日本語で記述。入力が日本語の場合は推奨英文の文法解説、入力が英語の場合は入力英文からの改善点と推奨英文の文法解説"}。出力順序は source_is_english、translated、explanation。英文を確定してから解説を生成すること。explanation内で語句を引用する際は必ず日本語の「」を使用し、半角ダブルクォート(")で囲わないこと（JSONが壊れるため）。"#;
 
+const EXPLAIN_PROMPT: &str = r#"英文読解アシスタント。入力された英文を自然な日本語に翻訳し、解説せよ。JSON出力: {"translated":"自然な日本語訳","explanation":"必ず日本語で記述。英文の構文、重要な語句・イディオムの意味と使い方の解説"}。出力順序は translated、explanation。日本語訳を確定してから解説を生成すること。explanation内で語句を引用する際は必ず日本語の「」を使用し、半角ダブルクォート(")で囲わないこと（JSONが壊れるため）。"#;
+
+/// What to do with the captured text.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mode {
+    /// Turn editable text into natural English that can replace it.
+    Rewrite,
+    /// Translate text that cannot be replaced into Japanese and explain it.
+    Explain,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslationResult {
     pub translated: String,
@@ -155,9 +166,11 @@ pub fn default_model() -> &'static str {
         .unwrap_or("gemini-3.8-flash")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn translate(
     api_key: &str,
     model: &str,
+    mode: Mode,
     input: &str,
     additional_prompt: &str,
     refinement: Option<&Refinement>,
@@ -174,25 +187,51 @@ pub fn translate(
         model
     );
 
-    let response_schema = json!({
-        "type": "object",
-        "properties": {
-            "translated": {
-                "type": "string",
-                "description": "自然な英文"
-            },
-            "explanation": {
-                "type": "string",
-                "description": "日本語での解説"
-            },
-            "source_is_english": {
-                "type": "boolean",
-                "description": "入力が英語であるかどうか"
-            }
-        },
-        "required": ["translated", "explanation", "source_is_english"],
-        "propertyOrdering": ["source_is_english", "translated", "explanation"]
-    });
+    let (system_prompt, response_schema, additional_prompt) = match mode {
+        Mode::Rewrite => (
+            SYSTEM_PROMPT,
+            json!({
+                "type": "object",
+                "properties": {
+                    "translated": {
+                        "type": "string",
+                        "description": "自然な英文"
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "description": "日本語での解説"
+                    },
+                    "source_is_english": {
+                        "type": "boolean",
+                        "description": "入力が英語であるかどうか"
+                    }
+                },
+                "required": ["translated", "explanation", "source_is_english"],
+                "propertyOrdering": ["source_is_english", "translated", "explanation"]
+            }),
+            additional_prompt,
+        ),
+        // Additional instructions are about the English the user writes.
+        Mode::Explain => (
+            EXPLAIN_PROMPT,
+            json!({
+                "type": "object",
+                "properties": {
+                    "translated": {
+                        "type": "string",
+                        "description": "自然な日本語訳"
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "description": "日本語での解説"
+                    }
+                },
+                "required": ["translated", "explanation"],
+                "propertyOrdering": ["translated", "explanation"]
+            }),
+            "",
+        ),
+    };
 
     // Keep latency low. Gemini 3.x cannot disable thinking entirely, only lower it.
     let generation_config = json!({
@@ -204,7 +243,7 @@ pub fn translate(
 
     let body = json!({
         "systemInstruction": {
-            "parts": [{ "text": SYSTEM_PROMPT }]
+            "parts": [{ "text": system_prompt }]
         },
         "contents": build_contents(input, additional_prompt, refinement)?,
         "generationConfig": generation_config

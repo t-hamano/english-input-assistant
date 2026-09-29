@@ -24,11 +24,16 @@ async function resizeToContent() {
 
 export function App() {
   const [translation, dispatch] = useReducer(translationReducer, initialTranslationState);
-  const { view, originalText } = translation;
+  const { view, originalText, isEditable } = translation;
   const [playing, setPlaying] = useState(false);
   const [ttsText, setTtsText] = useState<string | null>(null);
   const playingText = playing ? ttsText : null;
   const sentencePlaying = view.type === "result" && playingText === view.result.translated;
+  const explanationTitle = !isEditable
+    ? "解説"
+    : view.type === "result" && view.result.source_is_english
+      ? "改善点・文法解説"
+      : "文法解説";
   const [audioError, setAudioError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
@@ -74,7 +79,7 @@ export function App() {
 
   useEffect(() => {
     const unlisten = [
-      listen<{ request_id: number; text: string }>("show-loading", (e) => {
+      listen<{ request_id: number; text: string; is_editable: boolean }>("show-loading", (e) => {
         setActionError(null);
         setFeedback("");
         resultRef.current = null;
@@ -306,66 +311,80 @@ export function App() {
             <div className="original-text">{originalText}</div>
           </div>
           <div className="section">
-            <div className="section-title">推奨英文</div>
-            <TranslatedText
-              text={view.result.translated}
-              playingText={playingText}
-              onPlay={handlePlayText}
-            />
+            <div className="section-title">{isEditable ? "推奨英文" : "日本語訳"}</div>
+            {isEditable ? (
+              <TranslatedText
+                text={view.result.translated}
+                playingText={playingText}
+                onPlay={handlePlayText}
+              />
+            ) : (
+              <div className="translated-text">{view.result.translated}</div>
+            )}
           </div>
-          <div className="section">
-            <div className="audio-buttons">
-              <button
-                type="button"
-                aria-label={sentencePlaying ? "停止" : "再生"}
-                aria-pressed={sentencePlaying || undefined}
-                onClick={handlePlay}
-              >
-                <PlayIcon />
-                <span>{sentencePlaying ? "停止" : "再生"}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={recording ? "録音停止" : "録音"}
-                aria-pressed={recording || undefined}
-                disabled={recordingPlaying}
-                onClick={handleRecord}
-              >
-                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
-                  <path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z" />
-                </svg>
-                <span>{recording ? "録音停止" : "録音"}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={recordingPlaying ? "再生停止" : "録音再生"}
-                aria-pressed={recordingPlaying || undefined}
-                disabled={recording || !recordedAudioRef.current}
-                onClick={handlePlayRecording}
-              >
-                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
-                  <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
-                </svg>
-                <span>{recordingPlaying ? "再生停止" : "録音再生"}</span>
-              </button>
+          {isEditable && (
+            <div className="section">
+              <div className="audio-buttons">
+                <button
+                  type="button"
+                  aria-label={sentencePlaying ? "停止" : "再生"}
+                  aria-pressed={sentencePlaying || undefined}
+                  onClick={handlePlay}
+                >
+                  <PlayIcon />
+                  <span>{sentencePlaying ? "停止" : "再生"}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={recording ? "録音停止" : "録音"}
+                  aria-pressed={recording || undefined}
+                  disabled={recordingPlaying}
+                  onClick={handleRecord}
+                >
+                  <svg
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 -960 960 960"
+                  >
+                    <path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z" />
+                  </svg>
+                  <span>{recording ? "録音停止" : "録音"}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={recordingPlaying ? "再生停止" : "録音再生"}
+                  aria-pressed={recordingPlaying || undefined}
+                  disabled={recording || !recordedAudioRef.current}
+                  onClick={handlePlayRecording}
+                >
+                  <svg
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 -960 960 960"
+                  >
+                    <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
+                  </svg>
+                  <span>{recordingPlaying ? "再生停止" : "録音再生"}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           <div className="section">
-            <div className="section-title">
-              {view.result.source_is_english ? "改善点・文法解説" : "文法解説"}
-            </div>
+            <div className="section-title">{explanationTitle}</div>
             <section
               className="explanation"
               key={translation.latestRequestId}
               aria-busy={!view.complete}
-              aria-label={view.result.source_is_english ? "改善点・文法解説" : "文法解説"}
+              aria-label={explanationTitle}
               // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard-scrollable overflow region (see .explanation in styles.css)
               tabIndex={0}
             >
               {view.error ? (
                 <div role="alert">
                   <p className="error-msg">
-                    解説を読み込めませんでした。英文はそのまま使用できます。
+                    {isEditable
+                      ? "解説を読み込めませんでした。英文はそのまま使用できます。"
+                      : "解説を読み込めませんでした。"}
                   </p>
                   <details>
                     <summary>エラー詳細</summary>
@@ -382,38 +401,42 @@ export function App() {
               )}
             </section>
           </div>
-          <div className="section">
-            <div className="feedback">
-              <input
-                type="text"
-                aria-label="推奨英文と解説へのフィードバック"
-                placeholder="フィードバックを送る"
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                onKeyDown={(e) => {
-                  // Ignore Enter while the IME is confirming a conversion.
-                  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-                  e.preventDefault();
-                  if (view.complete && !view.error) void handleRefine();
-                }}
-              />
-              <button
-                type="button"
-                disabled={!view.complete || !!view.error || !feedback.trim()}
-                onClick={handleRefine}
-              >
-                更新
-              </button>
+          {isEditable && (
+            <div className="section">
+              <div className="feedback">
+                <input
+                  type="text"
+                  aria-label="推奨英文と解説へのフィードバック"
+                  placeholder="フィードバックを送る"
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Ignore Enter while the IME is confirming a conversion.
+                    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+                    e.preventDefault();
+                    if (view.complete && !view.error) void handleRefine();
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={!view.complete || !!view.error || !feedback.trim()}
+                  onClick={handleRefine}
+                >
+                  更新
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           {audioError && (
             <p className="error-msg" role="alert">
               {audioError}
             </p>
           )}
-          <button type="button" className="btn-primary btn-replace" onClick={handleReplace}>
-            置き換え
-          </button>
+          {isEditable && (
+            <button type="button" className="btn-primary btn-replace" onClick={handleReplace}>
+              置き換え
+            </button>
+          )}
         </div>
       )}
       {view.type === "error" && (

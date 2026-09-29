@@ -17,11 +17,30 @@ test("start accepts a newer request_id and resets to loading", () => {
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   assert.equal(state.requestId, 1);
   assert.equal(state.latestRequestId, 1);
   assert.equal(state.originalText, "hi");
+  assert.equal(state.isEditable, true);
   assert.deepEqual(state.view, { type: "loading" });
+});
+
+test("start records text that can only be explained", () => {
+  const replaceable = translationReducer(initialTranslationState, {
+    type: "start",
+    request_id: 1,
+    text: "hi",
+    is_editable: true,
+  });
+  const state = translationReducer(replaceable, {
+    type: "start",
+    request_id: 2,
+    text: "hello",
+    is_editable: false,
+  });
+  assert.equal(state.isEditable, false);
+  assert.equal(state.originalText, "hello");
 });
 
 test("start ignores a request_id at or below latestRequestId", () => {
@@ -29,9 +48,20 @@ test("start ignores a request_id at or below latestRequestId", () => {
     type: "start",
     request_id: 2,
     text: "hi",
+    is_editable: true,
   });
-  const stale = translationReducer(started, { type: "start", request_id: 2, text: "again" });
-  const older = translationReducer(started, { type: "start", request_id: 1, text: "older" });
+  const stale = translationReducer(started, {
+    type: "start",
+    request_id: 2,
+    text: "again",
+    is_editable: true,
+  });
+  const older = translationReducer(started, {
+    type: "start",
+    request_id: 1,
+    text: "older",
+    is_editable: true,
+  });
   assert.equal(stale, started);
   assert.equal(older, started);
 });
@@ -41,6 +71,7 @@ test("update is ignored when request_id does not match the active request", () =
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const updated = translationReducer(started, {
     type: "update",
@@ -56,6 +87,7 @@ test("update applies to the matching request_id", () => {
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const updated = translationReducer(started, {
     type: "update",
@@ -71,6 +103,7 @@ test("error on a result view marks it complete with an error message instead of 
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const updated = translationReducer(started, {
     type: "update",
@@ -87,6 +120,7 @@ test("error on a non-result view replaces it with an error view", () => {
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const errored = translationReducer(started, { type: "error", request_id: 1, message: "boom" });
   assert.deepEqual(errored.view, { type: "error", message: "boom" });
@@ -97,6 +131,7 @@ test("error is ignored when request_id does not match the active request", () =>
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const errored = translationReducer(started, { type: "error", request_id: 2, message: "boom" });
   assert.equal(errored, started);
@@ -107,6 +142,7 @@ test("preflight-error clears requestId and shows an error view regardless of pri
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const errored = translationReducer(started, { type: "preflight-error", message: "no network" });
   assert.equal(errored.requestId, null);
@@ -118,6 +154,7 @@ test("dismiss clears requestId but leaves the current view untouched", () => {
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const updated = translationReducer(started, {
     type: "update",
@@ -135,6 +172,7 @@ test("retry clears requestId and resets the view to loading", () => {
     type: "start",
     request_id: 1,
     text: "hi",
+    is_editable: true,
   });
   const updated = translationReducer(started, {
     type: "update",

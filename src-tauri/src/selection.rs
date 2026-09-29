@@ -1,10 +1,12 @@
-//! A cut selection belongs to exactly one request and one source window.
+//! A captured selection belongs to exactly one request and one source window.
 
 #[derive(Clone)]
 pub struct Selection {
     pub request_id: u64,
     pub text: String,
     pub source: usize,
+    /// `false` when the text could only be copied, so it is explained instead of replaced.
+    pub is_editable: bool,
 }
 
 #[derive(Default)]
@@ -13,6 +15,13 @@ pub struct PendingSelection(Option<Selection>);
 impl PendingSelection {
     pub fn current(&self) -> Option<&Selection> {
         self.0.as_ref()
+    }
+
+    /// A copied selection has nothing to restore, so a new capture may discard it.
+    pub fn discard_read_only(&mut self) {
+        if self.0.as_ref().is_some_and(|s| !s.is_editable) {
+            self.0 = None;
+        }
     }
 
     pub fn begin(&mut self, selection: Selection) {
@@ -42,15 +51,34 @@ pub fn focus_matches(source: usize, foreground: usize) -> bool {
     source != 0 && foreground == source
 }
 
-/// A failed clear or cut must never fall through to reading old clipboard data.
+#[derive(Debug, PartialEq)]
+pub struct Captured {
+    pub text: String,
+    pub is_editable: bool,
+}
+
+/// A failed clear, cut or copy must never fall through to reading old clipboard data.
+/// Text that cannot be cut (e.g. on a web page) falls back to a copy.
 pub fn capture(
     clear: impl FnOnce() -> Result<(), String>,
     cut: impl FnOnce() -> Result<(), String>,
-    read: impl FnOnce() -> Result<String, String>,
-) -> Result<String, String> {
+    copy: impl FnOnce() -> Result<(), String>,
+    mut read: impl FnMut() -> Result<String, String>,
+) -> Result<Captured, String> {
     clear()?;
     cut()?;
-    read()
+    let text = read()?;
+    if !text.is_empty() {
+        return Ok(Captured {
+            text,
+            is_editable: true,
+        });
+    }
+    copy()?;
+    Ok(Captured {
+        text: read()?,
+        is_editable: false,
+    })
 }
 
 #[cfg(test)]
@@ -62,6 +90,7 @@ mod tests {
             request_id: id,
             source,
             text: "private original".into(),
+            is_editable: true,
         }
     }
 
@@ -92,10 +121,26 @@ mod tests {
     }
 
     #[test]
+    fn new_capture_discards_only_read_only_selection() {
+        let mut pending = PendingSelection::default();
+        pending.begin(selection(1, 100));
+        pending.discard_read_only();
+        assert!(pending.current().is_some());
+        pending.take(1);
+        pending.begin(Selection {
+            is_editable: false,
+            ..selection(2, 100)
+        });
+        pending.discard_read_only();
+        assert!(pending.current().is_none());
+    }
+
+    #[test]
     fn failed_clipboard_clear_never_cuts_or_reads_stale_secret() {
         let result = capture(
             || Err("clipboard locked".into()),
             || panic!("must not cut"),
+            || panic!("must not copy"),
             || panic!("must not read old secret"),
         );
         assert_eq!(result.unwrap_err(), "clipboard locked");
@@ -106,14 +151,69 @@ mod tests {
         assert!(capture(
             || Ok(()),
             || Err("cut failed".into()),
+            || panic!("must not copy"),
             || panic!("must not read clipboard")
         )
         .is_err());
-        assert!(capture(|| Ok(()), || Ok(()), || Err("read failed".into())).is_err());
+        assert!(capture(
+            || Ok(()),
+            || Ok(()),
+            || panic!("must not copy"),
+            || Err("read failed".into())
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn cut_text_is_editable_and_never_copied() {
         assert_eq!(
-            capture(|| Ok(()), || Ok(()), || Ok(String::new())).unwrap(),
+            capture(
+                || Ok(()),
+                || Ok(()),
+                || panic!("must not copy"),
+                || Ok("cut".into())
+            )
+            .unwrap(),
+            Captured {
+                text: "cut".into(),
+                is_editable: true,
+            }
+        );
+    }
+
+    #[test]
+    fn uncuttable_text_falls_back_to_copy() {
+        let mut reads = vec![Ok("copied".into()), Ok(String::new())];
+        assert_eq!(
+            capture(|| Ok(()), || Ok(()), || Ok(()), || reads.pop().unwrap()).unwrap(),
+            Captured {
+                text: "copied".into(),
+                is_editable: false,
+            }
+        );
+        let mut reads = vec![Ok(String::new()), Ok(String::new())];
+        assert_eq!(
+            capture(|| Ok(()), || Ok(()), || Ok(()), || reads.pop().unwrap())
+                .unwrap()
+                .text,
             ""
         );
+    }
+
+    #[test]
+    fn failed_copy_never_reads_clipboard_again() {
+        let mut reads = 0;
+        let result = capture(
+            || Ok(()),
+            || Ok(()),
+            || Err("copy failed".into()),
+            || {
+                reads += 1;
+                assert_eq!(reads, 1, "must not read after a failed copy");
+                Ok(String::new())
+            },
+        );
+        assert_eq!(result.unwrap_err(), "copy failed");
     }
 
     #[test]
