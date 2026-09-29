@@ -232,3 +232,71 @@ pub fn translate(
         is_current,
     )
 }
+
+const WORD_PROMPT: &str =
+    "英文中の語句を日本語に訳せ。文脈に合った訳だけを簡潔に出力し、説明や引用符は付けないこと。";
+
+/// Translates a phrase selected from the suggested English, using the sentence as context.
+pub fn translate_word(
+    api_key: &str,
+    model: &str,
+    word: &str,
+    sentence: &str,
+) -> Result<String, String> {
+    if !ALLOWED_MODELS.iter().any(|m| m.value == model) {
+        return Err(format!("無効なモデル: {}", model));
+    }
+
+    let client = crate::google_api::http_client()?;
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        model
+    );
+    let body = json!({
+        "systemInstruction": {
+            "parts": [{ "text": WORD_PROMPT }]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{ "text": format!("英文: {}\n語句: {}", sentence, word) }]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "thinkingConfig": { "thinkingLevel": "low" }
+        }
+    });
+
+    let response = client
+        .post(&url)
+        .header(
+            "x-goog-api-key",
+            crate::google_api::api_key_header(api_key)?,
+        )
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| crate::google_api::request_error("Gemini", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!("Gemini API エラー: HTTP {status}"));
+    }
+
+    let response: serde_json::Value = response
+        .json()
+        .map_err(|_| "LLM のレスポンスを解析できませんでした。".to_string())?;
+    let text = response["candidates"][0]["content"]["parts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|part| part["thought"].as_bool() != Some(true))
+        .filter_map(|part| part["text"].as_str())
+        .collect::<String>();
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Gemini が空の翻訳を返しました".to_string());
+    }
+    Ok(text.to_string())
+}

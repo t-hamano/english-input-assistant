@@ -582,6 +582,19 @@ fn play_tts_inner(text: String, app: AppHandle) {
 }
 
 #[tauri::command]
+async fn translate_word(text: String, context: String, app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (api_key, model, _) = get_llm_config(&app)?;
+        if api_key.is_empty() {
+            return Err("API キーが設定されていません。".to_string());
+        }
+        llm::translate_word(&api_key, &model, &text, &context)
+    })
+    .await
+    .map_err(|_| "翻訳を開始できませんでした。".to_string())?
+}
+
+#[tauri::command]
 fn stop_tts(app: AppHandle) {
     stop_current_tts(&app);
     emit_tts(&app, "tts-done");
@@ -791,6 +804,7 @@ pub fn run() {
             restore_original_text,
             retry_translation,
             refine_translation,
+            translate_word,
             play_tts,
             stop_tts,
             preview_tts,

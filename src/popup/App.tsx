@@ -4,6 +4,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { PlayIcon } from "../icons";
 import { watchRecordingLifecycle } from "./recording-lifecycle";
+import { TranslatedText } from "./TranslatedText";
 import type { TranslationResult } from "./translation-state";
 import { initialTranslationState, translationReducer } from "./translation-state";
 
@@ -25,6 +26,9 @@ export function App() {
   const [translation, dispatch] = useReducer(translationReducer, initialTranslationState);
   const { view, originalText } = translation;
   const [playing, setPlaying] = useState(false);
+  const [ttsText, setTtsText] = useState<string | null>(null);
+  const playingText = playing ? ttsText : null;
+  const sentencePlaying = view.type === "result" && playingText === view.result.translated;
   const [audioError, setAudioError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
@@ -161,13 +165,21 @@ export function App() {
     }
   }, [closePopup, resetRecording]);
 
+  const handlePlayText = useCallback(
+    async (text: string) => {
+      if (playing && ttsText === text) {
+        await invoke("stop_tts");
+      } else {
+        setTtsText(text);
+        await invoke("play_tts", { text });
+      }
+    },
+    [playing, ttsText],
+  );
+
   const handlePlay = useCallback(async () => {
-    if (playing) {
-      await invoke("stop_tts");
-    } else if (resultRef.current) {
-      await invoke("play_tts", { text: resultRef.current.translated });
-    }
-  }, [playing]);
+    if (resultRef.current) await handlePlayText(resultRef.current.translated);
+  }, [handlePlayText]);
 
   const handleRetry = useCallback(async () => {
     const requestId = requestIdRef.current;
@@ -295,18 +307,22 @@ export function App() {
           </div>
           <div className="section">
             <div className="section-title">推奨英文</div>
-            <div className="translated-text">{view.result.translated}</div>
+            <TranslatedText
+              text={view.result.translated}
+              playingText={playingText}
+              onPlay={handlePlayText}
+            />
           </div>
           <div className="section">
             <div className="audio-buttons">
               <button
                 type="button"
-                aria-label={playing ? "停止" : "再生"}
-                aria-pressed={playing || undefined}
+                aria-label={sentencePlaying ? "停止" : "再生"}
+                aria-pressed={sentencePlaying || undefined}
                 onClick={handlePlay}
               >
                 <PlayIcon />
-                <span>{playing ? "停止" : "再生"}</span>
+                <span>{sentencePlaying ? "停止" : "再生"}</span>
               </button>
               <button
                 type="button"
