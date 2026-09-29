@@ -144,3 +144,16 @@ body,
   color: #d32f2f;
   font-weight: 600;
 }
+
+.feedback {
+  display: flex;
+  gap: 8px;
+}
+
+.feedback input {
+  flex: 1;
+}
+
+.feedback button {
+  width: 100px;
+}

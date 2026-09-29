@@ -26,7 +26,7 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 
 use config::{ConfigStore, SettingsConfig};
-use llm::TranslationResult;
+use llm::{Refinement, TranslationResult};
 use selection::{focus_matches, PendingSelection, Selection};
 use tts::{AudioCache, StopSignal};
 
@@ -49,6 +49,7 @@ fn translate_with_retry(
     api_key: &str,
     model: &str,
     additional_prompt: &str,
+    refinement: Option<&Refinement>,
 ) -> Result<TranslationResult, String> {
     let max_retries = 3;
     let mut displayed = false;
@@ -68,6 +69,7 @@ fn translate_with_retry(
             model,
             input,
             additional_prompt,
+            refinement,
             |result| {
                 displayed = true;
                 emit_translation(app, request_id, &result, false);
@@ -129,7 +131,7 @@ fn emit_translation_error(app: &AppHandle, request_id: u64, message: impl Into<S
     }
 }
 
-fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
+fn run_translation(app: &AppHandle, request_id: u64, input: &str, refinement: Option<&Refinement>) {
     let (api_key, model, additional_prompt) = match get_llm_config(app) {
         Ok(config) => config,
         Err(message) => {
@@ -145,7 +147,15 @@ fn run_translation(app: &AppHandle, request_id: u64, input: &str) {
         );
         return;
     }
-    match translate_with_retry(app, request_id, input, &api_key, &model, &additional_prompt) {
+    match translate_with_retry(
+        app,
+        request_id,
+        input,
+        &api_key,
+        &model,
+        &additional_prompt,
+        refinement,
+    ) {
         Ok(result) => emit_translation(app, request_id, &result, true),
         Err(message) => emit_translation_error(app, request_id, message),
     }
@@ -412,7 +422,7 @@ fn on_shortcut(app: AppHandle) {
     );
     show_popup(&app, cx, cy);
     drop(pending);
-    run_translation(&app, request_id, &text);
+    run_translation(&app, request_id, &text, None);
 }
 
 #[tauri::command]
@@ -491,14 +501,38 @@ fn paste_text(text: &str, source: usize) -> Result<(), String> {
 
 #[tauri::command]
 fn retry_translation(request_id: u64, app: AppHandle) -> Result<(), String> {
+    restart_translation(request_id, app, None, "再試行できる翻訳がありません。")
+}
+
+#[tauri::command]
+fn refine_translation(
+    request_id: u64,
+    refinement: Refinement,
+    app: AppHandle,
+) -> Result<(), String> {
+    if refinement.feedback.trim().is_empty() {
+        return Err("フィードバックを入力してください。".into());
+    }
+    restart_translation(
+        request_id,
+        app,
+        Some(refinement),
+        "更新できる翻訳がありません。",
+    )
+}
+
+fn restart_translation(
+    request_id: u64,
+    app: AppHandle,
+    refinement: Option<Refinement>,
+    missing_message: &str,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut pending = state
         .selection
         .try_lock()
         .map_err(|_| "テキストを処理中です。もう一度お試しください。".to_string())?;
-    pending
-        .get(request_id)
-        .ok_or("再試行できる翻訳がありません。")?;
+    pending.get(request_id).ok_or(missing_message)?;
     let next_id = state.translation_id.fetch_add(1, Ordering::SeqCst) + 1;
     let selection = pending.retry(request_id, next_id).unwrap();
     let _ = app.emit(
@@ -509,7 +543,7 @@ fn retry_translation(request_id: u64, app: AppHandle) -> Result<(), String> {
     );
     drop(pending);
     thread::spawn(move || {
-        run_translation(&app, next_id, &selection.text);
+        run_translation(&app, next_id, &selection.text, refinement.as_ref());
     });
     Ok(())
 }
@@ -756,6 +790,7 @@ pub fn run() {
             do_paste,
             restore_original_text,
             retry_translation,
+            refine_translation,
             play_tts,
             stop_tts,
             preview_tts,

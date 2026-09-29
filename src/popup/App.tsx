@@ -29,6 +29,7 @@ export function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingPlaying, setRecordingPlaying] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const resultRef = useRef<TranslationResult | null>(null);
   const requestIdRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -71,6 +72,7 @@ export function App() {
     const unlisten = [
       listen<{ request_id: number; text: string }>("show-loading", (e) => {
         setActionError(null);
+        setFeedback("");
         resultRef.current = null;
         dispatch({ type: "start", ...e.payload });
         resetRecording();
@@ -178,6 +180,22 @@ export function App() {
       setActionError(String(error));
     }
   }, [resetRecording]);
+
+  const handleRefine = useCallback(async () => {
+    const result = resultRef.current;
+    const requestId = requestIdRef.current;
+    if (!result || requestId === null || !feedback.trim()) return;
+    resetRecording();
+    setActionError(null);
+    try {
+      await invoke("refine_translation", {
+        requestId,
+        refinement: { previous: result, feedback },
+      });
+    } catch (error) {
+      setActionError(String(error));
+    }
+  }, [feedback, resetRecording]);
 
   const handleRecord = useCallback(async () => {
     const activeRecorder = mediaRecorderRef.current;
@@ -347,6 +365,30 @@ export function App() {
                 view.result.explanation
               )}
             </section>
+          </div>
+          <div className="section">
+            <div className="feedback">
+              <input
+                type="text"
+                aria-label="推奨英文と解説へのフィードバック"
+                placeholder="フィードバックを送る"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                onKeyDown={(e) => {
+                  // Ignore Enter while the IME is confirming a conversion.
+                  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  if (view.complete && !view.error) void handleRefine();
+                }}
+              />
+              <button
+                type="button"
+                disabled={!view.complete || !!view.error || !feedback.trim()}
+                onClick={handleRefine}
+              >
+                更新
+              </button>
+            </div>
           </div>
           {audioError && (
             <p className="error-msg" role="alert">

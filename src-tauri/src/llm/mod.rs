@@ -12,6 +12,13 @@ pub struct TranslationResult {
     pub source_is_english: bool,
 }
 
+/// A previous result and the user's feedback on it, sent as follow-up turns.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Refinement {
+    pub previous: TranslationResult,
+    pub feedback: String,
+}
+
 fn build_user_message(input: &str, additional_prompt: &str) -> String {
     if additional_prompt.is_empty() {
         input.to_string()
@@ -21,6 +28,34 @@ fn build_user_message(input: &str, additional_prompt: &str) -> String {
             input, additional_prompt
         )
     }
+}
+
+fn build_refinement_message(feedback: &str) -> String {
+    format!(
+        "上記の推奨英文と解説に対するフィードバック:\n{}\n\nこのフィードバックに基づいて推奨英文を改善し、改善後の推奨英文に対する解説を新たに生成せよ。source_is_english は最初の入力に基づいて判定すること。",
+        feedback
+    )
+}
+
+fn build_contents(
+    input: &str,
+    additional_prompt: &str,
+    refinement: Option<&Refinement>,
+) -> Result<serde_json::Value, String> {
+    let mut contents = vec![json!({
+        "role": "user",
+        "parts": [{ "text": build_user_message(input, additional_prompt) }]
+    })];
+    if let Some(refinement) = refinement {
+        let previous = serde_json::to_string(&refinement.previous)
+            .map_err(|_| "前回の翻訳結果を送信できませんでした。".to_string())?;
+        contents.push(json!({ "role": "model", "parts": [{ "text": previous }] }));
+        contents.push(json!({
+            "role": "user",
+            "parts": [{ "text": build_refinement_message(&refinement.feedback) }]
+        }));
+    }
+    Ok(json!(contents))
 }
 
 /// Tracks whether a byte-by-byte JSON scan is inside a string, consuming
@@ -125,6 +160,7 @@ pub fn translate(
     model: &str,
     input: &str,
     additional_prompt: &str,
+    refinement: Option<&Refinement>,
     on_translation: impl FnMut(TranslationResult),
     is_current: impl Fn() -> bool,
 ) -> Result<TranslationResult, String> {
@@ -170,12 +206,7 @@ pub fn translate(
         "systemInstruction": {
             "parts": [{ "text": SYSTEM_PROMPT }]
         },
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{ "text": build_user_message(input, additional_prompt) }]
-            }
-        ],
+        "contents": build_contents(input, additional_prompt, refinement)?,
         "generationConfig": generation_config
     });
 
