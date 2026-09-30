@@ -28,7 +28,9 @@ export function App() {
   const [playing, setPlaying] = useState(false);
   const [ttsText, setTtsText] = useState<string | null>(null);
   const playingText = playing ? ttsText : null;
-  const sentencePlaying = view.type === "result" && playingText === view.result.translated;
+  const speechText =
+    view.type === "result" ? (isEditable ? view.result.translated : originalText) : null;
+  const sentencePlaying = speechText !== null && playingText === speechText;
   const explanationTitle = !isEditable
     ? "解説"
     : view.type === "result" && view.result.source_is_english
@@ -183,8 +185,8 @@ export function App() {
   );
 
   const handlePlay = useCallback(async () => {
-    if (resultRef.current) await handlePlayText(resultRef.current.translated);
-  }, [handlePlayText]);
+    if (speechText !== null) await handlePlayText(speechText);
+  }, [handlePlayText, speechText]);
 
   const handleRetry = useCallback(async () => {
     const requestId = requestIdRef.current;
@@ -287,6 +289,46 @@ export function App() {
     setRecordingPlaying(true);
   }, [recordingPlaying]);
 
+  const audioButtons = (
+    <div className="section">
+      <div className="audio-buttons">
+        <button
+          type="button"
+          aria-label={sentencePlaying ? "停止" : "再生"}
+          aria-pressed={sentencePlaying || undefined}
+          onClick={handlePlay}
+        >
+          <PlayIcon />
+          <span>{sentencePlaying ? "停止" : "再生"}</span>
+        </button>
+        <button
+          type="button"
+          aria-label={recording ? "録音停止" : "録音"}
+          aria-pressed={recording || undefined}
+          disabled={recordingPlaying}
+          onClick={handleRecord}
+        >
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
+            <path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z" />
+          </svg>
+          <span>{recording ? "録音停止" : "録音"}</span>
+        </button>
+        <button
+          type="button"
+          aria-label={recordingPlaying ? "再生停止" : "録音再生"}
+          aria-pressed={recordingPlaying || undefined}
+          disabled={recording || !recordedAudioRef.current}
+          onClick={handlePlayRecording}
+        >
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
+            <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
+          </svg>
+          <span>{recordingPlaying ? "再生停止" : "録音再生"}</span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div id="popup">
       <div className="drag-handle" data-tauri-drag-region>
@@ -310,6 +352,7 @@ export function App() {
             <div className="section-title">原文</div>
             <div className="original-text">{originalText}</div>
           </div>
+          {!isEditable && audioButtons}
           <div className="section">
             <div className="section-title">{isEditable ? "推奨英文" : "日本語訳"}</div>
             {isEditable ? (
@@ -322,53 +365,7 @@ export function App() {
               <div className="translated-text">{view.result.translated}</div>
             )}
           </div>
-          {isEditable && (
-            <div className="section">
-              <div className="audio-buttons">
-                <button
-                  type="button"
-                  aria-label={sentencePlaying ? "停止" : "再生"}
-                  aria-pressed={sentencePlaying || undefined}
-                  onClick={handlePlay}
-                >
-                  <PlayIcon />
-                  <span>{sentencePlaying ? "停止" : "再生"}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={recording ? "録音停止" : "録音"}
-                  aria-pressed={recording || undefined}
-                  disabled={recordingPlaying}
-                  onClick={handleRecord}
-                >
-                  <svg
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 -960 960 960"
-                  >
-                    <path d="M395-435q-35-35-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35q-50 0-85-35Zm85-205Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm68.5-371.5Q520-503 520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480q17 0 28.5-11.5Z" />
-                  </svg>
-                  <span>{recording ? "録音停止" : "録音"}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={recordingPlaying ? "再生停止" : "録音再生"}
-                  aria-pressed={recordingPlaying || undefined}
-                  disabled={recording || !recordedAudioRef.current}
-                  onClick={handlePlayRecording}
-                >
-                  <svg
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 -960 960 960"
-                  >
-                    <path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z" />
-                  </svg>
-                  <span>{recordingPlaying ? "再生停止" : "録音再生"}</span>
-                </button>
-              </div>
-            </div>
-          )}
+          {isEditable && audioButtons}
           <div className="section">
             <div className="section-title">{explanationTitle}</div>
             <section
